@@ -1,8 +1,7 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Text;
 using System.Text.RegularExpressions;
+using AdvancedTerminal.Architecture.Observers;
 using AdvancedTerminal.Core;
 using AdvancedTerminal.Utility;
 using UnityEditor;
@@ -13,43 +12,61 @@ namespace AdvancedTerminal.UI.Components
     public sealed class CodeEditorComponent
     {
         private const int SoftTabWidth = 4;
+        private const string DefaultScratchName = "scratch.py";
+        private const char QuoteCharacter = '"';
+        private const char ApostropheCharacter = '\'';
 
         private static readonly Dictionary<string, string> ClosingPairs = new Dictionary<string, string>
         {
             { "(", ")" },
             { "[", "]" },
             { "{", "}" },
-            { "\"", "\"" },
-            { "'", "'" }
+            { QuoteCharacter.ToString(), QuoteCharacter.ToString() },
+            { ApostropheCharacter.ToString(), ApostropheCharacter.ToString() }
         };
 
         private static readonly Regex keywordPattern = new Regex(
-            @"\b(def|class|import|from|return|if|elif|else|for|while|print|try|except|finally|with|as|lambda|yield|pass)\b",
+            @"\b(def|class|import|from|return|if|elif|else|for|while|print|try|except|finally|with|as|lambda|yield|pass|global|nonlocal|assert|raise|del|in|is|not|and|or|break|continue|async|await)\b",
             RegexOptions.Compiled);
 
         private static readonly Regex builtinPattern = new Regex(
-            @"\b(True|False|None|self|len|range|str|int|float|list|dict|set|tuple|open|enumerate|zip|map|filter)\b",
+            @"\b(True|False|None|self|len|range|str|int|float|list|dict|set|tuple|open|enumerate|zip|map|filter|sum|min|max|abs|round|type|isinstance|super|__init__)\b",
             RegexOptions.Compiled);
 
         private static readonly Regex literalPattern = new Regex(
-            @"(\"\"\"[\s\S]*?\"\"\"|'''[\s\S]*?'''|""[^""]*""|'[^']*'|\b\d+(?:\.\d+)?\b)",
+            "(\"\"\"[\\s\\S]*?\"\"\"|'''[\\s\\S]*?'''|\"[^\"\\n]*\"|'[^'\\n]*'|\\b\\d+(?:\\.\\d+)?\\b)",
             RegexOptions.Compiled);
 
         private static readonly Regex commentPattern = new Regex(
             @"#[^\n]*",
             RegexOptions.Compiled);
 
+        private static readonly Regex decoratorPattern = new Regex(
+            @"(?m)^[\t ]*@[A-Za-z_][A-Za-z0-9_.]*",
+            RegexOptions.Compiled);
+
+        private static readonly Regex functionPattern = new Regex(
+            @"\b(?:def|class)\s+([A-Za-z_][A-Za-z0-9_]*)",
+            RegexOptions.Compiled);
+
+        private const string KeywordHex = "#C586C0";
+        private const string BuiltinHex = "#DCDCAA";
+        private const string LiteralHex = "#CE9178";
+        private const string CommentHex = "#5C6370";
+        private const string DecoratorHex = "#D7BA7D";
+        private const string FunctionHex = "#4EC9B0";
+
         private readonly ITerminalEngine engine;
         private readonly IScriptStorageManager storage;
 
         private readonly VisualElement toolbar;
-        private readonly ScrollView gutterScroll;
+        private readonly ScrollView editorScroll;
         private readonly VisualElement highlightLayer;
         private readonly TextField codeField;
         private readonly Label caretReadout;
         private readonly Foldout ideFoldout;
 
-        private string activeFileName = "scratch.py";
+        private string activeFileName = DefaultScratchName;
         private bool collapsed;
 
         public CodeEditorComponent(VisualElement host, ITerminalEngine engine,
@@ -77,28 +94,30 @@ namespace AdvancedTerminal.UI.Components
             codeField.RegisterCallback<KeyDownEvent>(HandleCodeKey);
             codeField.RegisterValueChangedCallback(HandleCodeMutation);
 
-            gutterScroll = new ScrollView(Orientation.Vertical);
-            gutterScroll.AddToClassList("gutter-scroll");
-            gutterScroll.Add(highlightLayer);
-            gutterScroll.Add(codeField);
-            ideFoldout.Add(gutterScroll);
+            editorScroll = new ScrollView(Orientation.Vertical);
+            editorScroll.AddToClassList("gutter-scroll");
+            editorScroll.Add(highlightLayer);
+            editorScroll.Add(codeField);
+            ideFoldout.Add(editorScroll);
 
-            caretReadout = new Label("Ln 1 | Col 1 | scratch.py");
+            caretReadout = new Label(BuildCaretText(1, 1));
             caretReadout.AddToClassList("caret-readout");
             ideFoldout.Add(caretReadout);
 
             RefreshHighlight();
         }
 
+        public string ActiveSource => codeField.value;
+
+        public string ActiveFileName => activeFileName;
+
         public void LoadFile(string fileName)
         {
             activeFileName = fileName;
-            codeField.SetValueWithoutNotify(storage.ReadContent(fileName));
+            codeField.SetValueWithoutNotify(ReadActiveFile());
             RefreshHighlight();
             UpdateCaretReadout();
         }
-
-        public string ActiveSource => codeField.value;
 
         public void RunActiveBuffer()
         {
@@ -108,7 +127,7 @@ namespace AdvancedTerminal.UI.Components
         public void SaveActiveBuffer()
         {
             StoredScript saved = storage.SaveContent(activeFileName, codeField.value);
-            engine.Emit($"Saved {saved.FileName} ({saved.ByteSize} bytes).", TerminalLogLevelSuccessProxy());
+            engine.Emit($"Saved {saved.FileName} ({saved.ByteSize} bytes).", TerminalLogLevel.Success);
             AssetDatabase.Refresh();
         }
 
@@ -117,11 +136,11 @@ namespace AdvancedTerminal.UI.Components
             string source = codeField.value;
             List<string> diagnostics = new List<string>();
 
-            string[] lines = source.Replace("\r\n", "\n").Split('\n');
+            string[] lines = NormalizeNewlines(source);
 
             for (int i = 0; i < lines.Length; i++)
             {
-                if (lines[i].Contains('\t'))
+                if (lines[i].Contains("\t"))
                 {
                     diagnostics.Add($"Line {i + 1}: tab character detected, expected soft tabs.");
                 }
@@ -139,13 +158,13 @@ namespace AdvancedTerminal.UI.Components
 
             if (diagnostics.Count == 0)
             {
-                engine.Emit("PEP8 audit clean.", TerminalLogLevelSuccessProxy());
+                engine.Emit("PEP8 audit clean.", TerminalLogLevel.Success);
                 return;
             }
 
             foreach (string diagnostic in diagnostics)
             {
-                engine.Emit(diagnostic, TerminalLogLevelWarningProxy());
+                engine.Emit(diagnostic, TerminalLogLevel.Warning);
             }
         }
 
@@ -172,7 +191,7 @@ namespace AdvancedTerminal.UI.Components
         private void HandleCollapseToggle(ChangeEvent<bool> args)
         {
             collapsed = !args.newValue;
-            gutterScroll.style.display = collapsed ? DisplayStyle.None : DisplayStyle.Flex;
+            editorScroll.style.display = collapsed ? DisplayStyle.None : DisplayStyle.Flex;
             caretReadout.style.display = collapsed ? DisplayStyle.None : DisplayStyle.Flex;
         }
 
@@ -233,16 +252,18 @@ namespace AdvancedTerminal.UI.Components
 
         private int ResolveCursor()
         {
-            return Math.Clamp(codeField.cursorIndex, 0, (codeField.value ?? string.Empty).Length);
+            int length = (codeField.value ?? string.Empty).Length;
+            return Math.Clamp(codeField.cursorIndex, 0, length);
         }
 
         private void MoveCursor(int target)
         {
             try
             {
-                codeField.CursorPositionForNewlyFocusedTextField(target);
+                codeField.cursorIndex = target;
+                codeField.selectIndex = target;
             }
-            catch (InvalidOperationException)
+            catch (ArgumentOutOfRangeException)
             {
                 caretReadout.tooltip = "Cursor reposition requires field focus.";
             }
@@ -257,8 +278,7 @@ namespace AdvancedTerminal.UI.Components
         private void RefreshHighlight()
         {
             highlightLayer.Clear();
-            string source = codeField.value ?? string.Empty;
-            string[] lines = source.Replace("\r\n", "\n").Split('\n');
+            string[] lines = NormalizeNewlines(codeField.value ?? string.Empty);
 
             for (int i = 0; i < lines.Length; i++)
             {
@@ -272,11 +292,28 @@ namespace AdvancedTerminal.UI.Components
         private string TokenizeLine(string line)
         {
             string guarded = EscapeMarkup(line);
-            guarded = commentPattern.Replace(guarded, match => Tint(match.Value, "#5C6370"));
-            guarded = literalPattern.Replace(guarded, match => Tint(match.Value, "#CE9178"));
-            guarded = keywordPattern.Replace(guarded, match => Tint(match.Value, "#C586C0"));
-            guarded = builtinPattern.Replace(guarded, match => Tint(match.Value, "#DCDCAA"));
+            guarded = commentPattern.Replace(guarded, match => Tint(match.Value, CommentHex));
+            guarded = literalPattern.Replace(guarded, match => Tint(match.Value, LiteralHex));
+            guarded = decoratorPattern.Replace(guarded, match => Tint(match.Value, DecoratorHex));
+            guarded = functionPattern.Replace(guarded, match => TintFunctionName(match.Value));
+            guarded = keywordPattern.Replace(guarded, match => Tint(match.Value, KeywordHex));
+            guarded = builtinPattern.Replace(guarded, match => Tint(match.Value, BuiltinHex));
             return guarded;
+        }
+
+        private static string TintFunctionName(string declaration)
+        {
+            Match nameMatch = functionPattern.Match(declaration);
+
+            if (!nameMatch.Success)
+            {
+                return Tint(declaration, KeywordHex);
+            }
+
+            string head = declaration.Substring(0, nameMatch.Groups[1].Index);
+            string name = nameMatch.Groups[1].Value;
+            string tail = declaration.Substring(nameMatch.Groups[1].Index + name.Length);
+            return Tint(head.TrimEnd(), KeywordHex) + " " + Tint(name, FunctionHex) + tail;
         }
 
         private static string Tint(string token, string hex)
@@ -286,9 +323,14 @@ namespace AdvancedTerminal.UI.Components
 
         private static string EscapeMarkup(string input)
         {
-            return input.Replace("&", "\\u0026")
-                        .Replace("<", "\\u003c")
-                        .Replace(">", "\\u003e");
+            return input.Replace("&", "&amp;")
+                        .Replace("<", "&lt;")
+                        .Replace(">", "&gt;");
+        }
+
+        private static string[] NormalizeNewlines(string source)
+        {
+            return source.Replace("\r\n", "\n").Split('\n');
         }
 
         private void UpdateCaretReadout()
@@ -310,23 +352,18 @@ namespace AdvancedTerminal.UI.Components
                 column++;
             }
 
-            caretReadout.text = $"Ln {line} | Col {column} | {activeFileName}";
+            caretReadout.text = BuildCaretText(line, column);
+        }
+
+        private string BuildCaretText(int line, int column)
+        {
+            return $"Ln {line} | Col {column} | {activeFileName}";
         }
 
         private string ReadActiveFile()
         {
             string content = storage.ReadContent(activeFileName);
             return string.IsNullOrEmpty(content) ? "print('Hello Unity Terminal')" : content;
-        }
-
-        private static Architecture.Observers.TerminalLogLevel TerminalLogLevelSuccessProxy()
-        {
-            return Architecture.Observers.TerminalLogLevel.Success;
-        }
-
-        private static Architecture.Observers.TerminalLogLevel TerminalLogLevelWarningProxy()
-        {
-            return Architecture.Observers.TerminalLogLevel.Warning;
         }
     }
 }
