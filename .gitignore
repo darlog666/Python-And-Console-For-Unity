@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+Library/
+Temp/
+Obj/
+Logs/
+UserSettings/
