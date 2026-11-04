@@ -741,9 +741,4 @@ optimization_result = run_pipeline()
 Distributed under the MIT License. See `LICENSE` for details.
 
 ---
-
-<div align="center">
-
-**Built for teams that treat the Editor as a platform, not just an app.**
-
 </div>
