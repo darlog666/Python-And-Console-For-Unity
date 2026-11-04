@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using AdvancedTerminal.Architecture.Observers;
 using AdvancedTerminal.Architecture.Pipelines;
 using AdvancedTerminal.Core;
 using AdvancedTerminal.UI.Components;
