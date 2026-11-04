@@ -33,7 +33,7 @@ namespace AdvancedTerminal.Core
             EditorApplication.quitting += HandleEditorQuitting;
         }
 
-        public T Register<T>(T service) where T : class, ITerminalService
+        public T Register<T>(T service) where T : class
         {
             if (service == null)
             {
@@ -53,7 +53,7 @@ namespace AdvancedTerminal.Core
             return service;
         }
 
-        public T Resolve<T>() where T : class, ITerminalService
+        public T Resolve<T>() where T : class
         {
             if (disposed)
             {
@@ -68,7 +68,7 @@ namespace AdvancedTerminal.Core
             throw KeyNotFoundExceptionMessage<T>.BuildException();
         }
 
-        public bool TryResolve<T>(out T service) where T : class, ITerminalService
+        public bool TryResolve<T>(out T service) where T : class
         {
             service = null;
 
@@ -86,12 +86,12 @@ namespace AdvancedTerminal.Core
             return false;
         }
 
-        public bool IsRegistered<T>() where T : class, ITerminalService
+        public bool IsRegistered<T>() where T : class
         {
             return registry.ContainsKey(typeof(T));
         }
 
-        public void Unregister<T>() where T : class, ITerminalService
+        public void Unregister<T>() where T : class
         {
             lock (registrationGate)
             {
