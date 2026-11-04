@@ -5,13 +5,13 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using AdvancedTerminal.Architecture.Commands;
-using AdvancedTerminal.Architecture.Observers;
-using AdvancedTerminal.Architecture.Pipelines;
+using UnityAdvancedTerminal.Architecture.Commands;
+using UnityAdvancedTerminal.Architecture.Observers;
+using UnityAdvancedTerminal.Architecture.Pipelines;
 using UnityEditor;
 using UnityEngine;
 
-namespace AdvancedTerminal.Core
+namespace UnityAdvancedTerminal.Core
 {
     public sealed class LogFlushedEvent : EventArgs
     {

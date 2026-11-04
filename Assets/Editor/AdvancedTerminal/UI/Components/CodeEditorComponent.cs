@@ -1,14 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
-using AdvancedTerminal.Architecture.Observers;
-using AdvancedTerminal.Core;
-using AdvancedTerminal.Utility;
+using UnityAdvancedTerminal.Architecture.Observers;
+using UnityAdvancedTerminal.Core;
+using UnityAdvancedTerminal.Utility;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
 
-namespace AdvancedTerminal.UI.Components
+namespace UnityAdvancedTerminal.UI.Components
 {
     public sealed class CodeEditorComponent
     {
@@ -205,14 +205,14 @@ namespace AdvancedTerminal.UI.Components
 
         private void HandleCodeKey(KeyDownEvent args)
         {
-            if (args.ctrl && args.keyCode == KeyCode.Return)
+            if (args.ctrlKey && args.keyCode == KeyCode.Return)
             {
                 RunActiveBuffer();
                 args.StopPropagation();
                 return;
             }
 
-            if (args.ctrl && args.keyCode == KeyCode.S)
+            if (args.ctrlKey && args.keyCode == KeyCode.S)
             {
                 SaveActiveBuffer();
                 args.StopPropagation();

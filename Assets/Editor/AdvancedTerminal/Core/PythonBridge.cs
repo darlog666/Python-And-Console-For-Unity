@@ -7,9 +7,9 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using AdvancedTerminal.Architecture.Observers;
+using UnityAdvancedTerminal.Architecture.Observers;
 
-namespace AdvancedTerminal.Core
+namespace UnityAdvancedTerminal.Core
 {
     public enum PythonBackendKind
     {
@@ -314,12 +314,13 @@ namespace AdvancedTerminal.Core
         {
             try
             {
-                target.Kill(entireProcessTree: true);
+                target.Kill();
                 return;
             }
-            catch (PlatformNotSupportedException)
+            catch (Exception failure) when (failure is InvalidOperationException ||
+                                            failure is System.ComponentModel.Win32Exception)
             {
-                target.Kill();
+                return;
             }
         }
 
@@ -371,7 +372,12 @@ namespace AdvancedTerminal.Core
                 return configured;
             }
 
-            return OperatingSystem.IsWindows() ? "python" : "python3";
+            return IsWindowsHost() ? "python" : "python3";
+        }
+
+        private static bool IsWindowsHost()
+        {
+            return Path.DirectorySeparatorChar == '\\';
         }
 
         private void PreparePythonNetProbe()

@@ -1,16 +1,16 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using AdvancedTerminal.Architecture.Observers;
-using AdvancedTerminal.Architecture.Pipelines;
-using AdvancedTerminal.Core;
-using AdvancedTerminal.UI.Components;
-using AdvancedTerminal.Utility;
+using UnityAdvancedTerminal.Architecture.Observers;
+using UnityAdvancedTerminal.Architecture.Pipelines;
+using UnityAdvancedTerminal.Core;
+using UnityAdvancedTerminal.UI.Components;
+using UnityAdvancedTerminal.Utility;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
 
-namespace AdvancedTerminal.UI.Windows
+namespace UnityAdvancedTerminal.UI.Windows
 {
     public sealed class TerminalEditorWindow : EditorWindow, ITerminalLogObserver
     {
@@ -59,7 +59,7 @@ namespace AdvancedTerminal.UI.Windows
 
             if (tree != null)
             {
-                tree.Clone(rootVisualElement);
+                tree.CloneTree(rootVisualElement);
                 AttachStylesheet();
             }
             else

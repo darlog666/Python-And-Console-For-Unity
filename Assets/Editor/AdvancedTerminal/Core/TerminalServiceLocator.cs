@@ -2,7 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using UnityEditor;
 
-namespace AdvancedTerminal.Core
+namespace UnityAdvancedTerminal.Core
 {
     public interface ITerminalService
     {

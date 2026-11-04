@@ -4,9 +4,9 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
-using AdvancedTerminal.Architecture.Observers;
+using UnityAdvancedTerminal.Architecture.Observers;
 
-namespace AdvancedTerminal.Architecture.Commands
+namespace UnityAdvancedTerminal.Architecture.Commands
 {
     public sealed class SystemCmdCommand : TerminalCommandBase
     {

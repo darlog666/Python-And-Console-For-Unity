@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-namespace AdvancedTerminal.Utility
+namespace UnityAdvancedTerminal.Utility
 {
     public sealed class StoredScript
     {

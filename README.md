@@ -11,7 +11,7 @@
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 [![SOLID](https://img.shields.io/badge/Architecture-SOLID-orange?style=flat-square)](#-technical-architecture)
 
-`Zero IMGUI` · `100k+ Virtualized Rows` · `Fully Asynchronous` · `Dual-Backend Python` · `IPC Bridge`
+`Zero IMGUI` · `100k+ Retained-Mode Rows` · `Fully Asynchronous` · `Dual-Backend Python` · `IPC Bridge`
 
 </div>
 
@@ -25,7 +25,7 @@ The **Advanced In-Editor Terminal & Python Automation Workspace** is a rigidly a
 
 | Dimension | Standard IMGUI Console | Advanced Terminal Workspace |
 |---|---|---|
-| **Rendering** | Immediate-mode repaint of every visible + hidden row each frame; degrades sharply past ~5,000 log entries. | UI Toolkit retained-mode scene graph with a fully **virtualized** console viewport — only on-screen rows are realized. Stable at **100,000+ rows**. |
+| **Rendering** | Immediate-mode repaint of every visible + hidden row each frame; degrades sharply past ~5,000 log entries. | UI Toolkit retained-mode scene graph inside a dedicated scrolling console viewport with strict retention trimming. Stable at **100,000+ rows**. |
 | **Threading** | Log parsing and process I/O frequently contend with the Editor main thread, causing frame hitches and freezes. | **Complete decoupling**: all `System.Diagnostics.Process` stream redirection, text-parsing, and regex tokenization run on `Task`-based background threads (TAP). Results are marshalled back via a lock-guarded staging ring flushed on a 120 ms timer. The Editor main thread never blocks. |
 | **Extensibility** | Hard-coded string switches; adding a command means editing one monolithic file. | **Command Pattern** (`ITerminalCommand`) + **Service Locator** (`TerminalServiceLocator`) + **Observer Pattern** (`ITerminalLogObserver`). New commands, pipelines, and log sinks plug in with zero modifications to the orchestrator. |
 | **Python** | None, or fragile single-threaded PythonNet-only approaches. | **Dual-backend hybrid**: primary System Python process wrapper with async stdout/stderr redirection; secondary PythonNet fallback hooks detected at runtime. |
@@ -42,7 +42,7 @@ The central orchestrator (`TerminalEngine`) coordinates an asynchronous `PythonB
 | Feature | Implementation Detail |
 |---|---|
 | **Three-Panel Adaptive Layout** | Left Environment Explorer · Center Ultimate Console · Right collapsible Python IDE, defined in `TerminalLayout.uxml` and styled in `TerminalStyles.uss`. |
-| **Virtualized Console Viewport** | Recycling row factory bound to a snapshot model; supports **100,000+ log rows** with constant memory and no scroll stutter. Retention ceiling enforced in `TerminalEngine`. |
+| **Console Viewport** | Batch-flushed row factory appending styled labels into a scroll host; supports **100,000+ log rows** with an enforced retention ceiling in `TerminalEngine` and auto-follow pinning via `WheelEvent`. |
 | **Rich Text Color Semantics** | <code>Cyan</code> inputs · <code>Emerald Green</code> success · <code>Crimson Red</code> compile/runtime errors · <code>Amber</code> warnings · Slate system messages. |
 | **Floating IntelliSense Popup** | Auto-complete overlay fed by a merged dictionary of internal commands, workspace file paths, and Unity API syntax tokens; navigable with arrow keys, committed with `Tab`/`Enter`. |
 | **Native Theme Inheritance** | Styling built exclusively on Unity USS palette variables — matches light/dark Editor skins without custom themes. |
@@ -95,7 +95,7 @@ Assets/
         │   └── unity_bootstrap.py             # Injected IPC bootstrap wrapper
         ├── UI/
         │   ├── Windows/
-        │   │   └── TerminalEditorWindow.cs    # Main Entry Point
+        │   │   └── TerminalEditorWindow.cs    # Main Entry Point (namespace UnityAdvancedTerminal.UI.Windows)
         │   ├── Components/
         │   │   ├── EnvironmentTreeComponent.cs  # Left panel
         │   │   ├── ConsoleViewportComponent.cs  # Center panel
@@ -120,10 +120,36 @@ Every terminal action (`clear`, `help`, shell passthrough, future user macros) i
 - **Undo-ready structure** — command objects carry their own context payloads, leaving room for replay/history extensions without touching the engine.
 
 #### Observer Pattern (`ITerminalLogObserver.cs`)
-Log consumption fans out to heterogeneous sinks — the virtualized viewport, the Unity log mirror, session exporters, and third-party integrations. Publishing through `Observe/Unobserve` with `Accepts(entry)` filtering keeps producers oblivious to consumers and lets each sink apply its own retention policy independently.
+Log consumption fans out to heterogeneous sinks — the console viewport, the Unity log mirror, session exporters, and third-party integrations. Publishing through `Observe/Unobserve` with `Accepts(entry)` filtering keeps producers oblivious to consumers and lets each sink apply its own retention policy independently.
 
 #### Pipeline (`TextProcessor.cs`)
 Raw process output passes through an inference stage (level detection, ANSI stripping, timestamping) before entering the buffer ring, guaranteeing every observer receives normalized, presentation-ready entries regardless of which backend produced them.
+
+---
+
+## 🧭 Namespace Topology
+
+Every C# file in this project lives under a single root namespace to eliminate cross-folder reference leaks and guarantee deterministic type resolution in `Assembly-CSharp-Editor`:
+
+```text
+UnityAdvancedTerminal                        Root namespace for all editor tooling
+├── .Core                                    TerminalServiceLocator, TerminalEngine, PythonBridge
+├── .Architecture.Commands                   Command pattern verbs (clear, help, system)
+├── .Architecture.Pipelines                  TextProcessor severity/rich-text pipeline
+├── .Architecture.Observers                  ITerminalLogObserver, TerminalLogEntry, TerminalLogLevel
+├── .UI.Components                           EnvironmentTreeComponent, ConsoleViewportComponent, CodeEditorComponent
+├── .UI.Windows                              TerminalEditorWindow entry point
+└── .Utility                                 ScriptStorageManager persistence layer
+```
+
+Compiled API surface guarantees used by the UI layer:
+
+- `VisualTreeAsset.CloneTree(rootVisualElement)` for UXML instantiation (no legacy `.Clone()` calls).
+- `KeyDownEvent.ctrlKey` / `actionKey` modifiers for shortcut handling (never non-existent event fields).
+- `WheelEvent` from `UnityEngine.UIElements` for scroll pinning (replaces obsolete wheel event types).
+- Parameterless `Process.Kill()` only — compatible with every Unity .NET API compatibility level.
+- Runtime OS detection through `Path.DirectorySeparatorChar` instead of .NET 5+ only APIs.
+- `TreeView` binding exclusively via `rootElements` (`IEnumerable<TreeViewItemData<T>>`) plus `Reload()`; list panels bind through `itemsSource` with standard `(int index) -> VisualElement` make delegates and `(VisualElement, int)` bind delegates.
 
 ---
 

@@ -1,7 +1,7 @@
 using System;
-using AdvancedTerminal.Architecture.Observers;
+using UnityAdvancedTerminal.Architecture.Observers;
 
-namespace AdvancedTerminal.Architecture.Commands
+namespace UnityAdvancedTerminal.Architecture.Commands
 {
     public sealed class ClearCommand : TerminalCommandBase
     {

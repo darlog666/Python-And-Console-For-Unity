@@ -300,3 +300,31 @@
     border-width: 1px;
     border-color: var(--terminal-border);
 }
+
+.console-row-host {
+    flex-direction: column;
+}
+
+.log-row-input {
+    color: var(--terminal-cyan);
+}
+
+.log-row-success {
+    color: var(--terminal-emerald);
+}
+
+.log-row-error {
+    color: var(--terminal-crimson);
+}
+
+.log-row-warning {
+    color: var(--terminal-amber);
+}
+
+.log-row-system {
+    color: var(--terminal-violet);
+}
+
+.log-row-info {
+    color: var(--terminal-muted);
+}

@@ -1,6 +1,6 @@
 using System;
 
-namespace AdvancedTerminal.Architecture.Observers
+namespace UnityAdvancedTerminal.Architecture.Observers
 {
     public enum TerminalLogLevel
     {

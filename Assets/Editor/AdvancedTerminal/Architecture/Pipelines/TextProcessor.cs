@@ -2,9 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Text.RegularExpressions;
-using AdvancedTerminal.Architecture.Observers;
+using UnityAdvancedTerminal.Architecture.Observers;
 
-namespace AdvancedTerminal.Architecture.Pipelines
+namespace UnityAdvancedTerminal.Architecture.Pipelines
 {
     public sealed class TextProcessingResult
     {

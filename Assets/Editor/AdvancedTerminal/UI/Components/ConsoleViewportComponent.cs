@@ -1,11 +1,11 @@
 using System;
 using System.Collections.Generic;
-using AdvancedTerminal.Architecture.Observers;
-using AdvancedTerminal.Core;
+using UnityAdvancedTerminal.Architecture.Observers;
+using UnityAdvancedTerminal.Core;
 using UnityEngine;
 using UnityEngine.UIElements;
 
-namespace AdvancedTerminal.UI.Components
+namespace UnityAdvancedTerminal.UI.Components
 {
     public sealed class ConsoleViewportComponent : ITerminalLogObserver
     {
@@ -13,7 +13,8 @@ namespace AdvancedTerminal.UI.Components
         private const int MaxRenderedSuggestions = 9;
 
         private readonly ITerminalEngine engine;
-        private readonly ListView logList;
+        private readonly ScrollView logScroll;
+        private readonly VisualElement rowHost;
         private readonly TextField commandInput;
         private readonly VisualElement suggestionPopup;
         private readonly VisualElement statusStrip;
@@ -29,14 +30,17 @@ namespace AdvancedTerminal.UI.Components
         {
             this.engine = engine ?? throw new ArgumentNullException(nameof(engine));
 
-            logList = new ListView(renderedRows, VirtualRowHeight, MakeLogRow, BindLogRow);
-            logList.name = "console-log-list";
-            logList.virtualizationMethod = CollectionVirtualizationMethod.FixedHeight;
-            logList.selectionType = SelectionType.None;
-            logList.showBorder = false;
-            logList.AddToClassList("console-viewport");
-            logList.RegisterCallback<WheelEvent>(HandleWheelPinning);
-            host.Add(logList);
+            logScroll = new ScrollView(Orientation.Vertical);
+            logScroll.name = "console-log-scroll";
+            logScroll.AddToClassList("console-viewport");
+            logScroll.RegisterCallback<WheelEvent>(HandleWheelPinning);
+            logScroll.schedule.Execute(EvaluatePinning).Every(250);
+
+            rowHost = new VisualElement();
+            rowHost.name = "console-row-host";
+            rowHost.AddToClassList("console-row-host");
+            logScroll.Add(rowHost);
+            host.Add(logScroll);
 
             suggestionPopup = BuildSuggestionPopup();
             host.Add(suggestionPopup);
@@ -85,10 +89,10 @@ namespace AdvancedTerminal.UI.Components
             for (int i = 0; i < batch.Length; i++)
             {
                 renderedRows.Add(batch[i]);
+                rowHost.Add(BuildRow(batch[i]));
             }
 
             TrimRetention();
-            RebindList();
 
             if (pinnedToBottom)
             {
@@ -101,7 +105,7 @@ namespace AdvancedTerminal.UI.Components
         public void OnBufferCleared()
         {
             renderedRows.Clear();
-            RebindList();
+            rowHost.Clear();
             UpdateStatus();
         }
 
@@ -112,46 +116,40 @@ namespace AdvancedTerminal.UI.Components
             foreach (TerminalLogEntry entry in snapshot)
             {
                 renderedRows.Add(entry);
+                rowHost.Add(BuildRow(entry));
             }
 
-            RebindList();
             ScrollToEnd();
             UpdateStatus();
         }
 
-        private VisualElement MakeLogRow(int index)
+        private static Label BuildRow(TerminalLogEntry entry)
         {
-            Label row = new Label();
+            Label row = new Label($"[{entry.Timestamp:HH:mm:ss}] {entry.Message}");
             row.enableRichText = true;
+            row.AddToClassList(PaletteClassFor(entry.Level));
+            row.style.minHeight = VirtualRowHeight;
             row.AddToClassList("log-row");
             return row;
         }
 
-        private void BindLogRow(VisualElement element, int index)
-        {
-            Label row = (Label)element;
-            TerminalLogEntry entry = renderedRows[index];
-            row.text = $"[{entry.Timestamp:HH:mm:ss}] {entry.Message}";
-            row.style.color = PaletteFor(entry.Level);
-        }
-
-        private static UnityEngine.Color PaletteFor(TerminalLogLevel level)
+        private static string PaletteClassFor(TerminalLogLevel level)
         {
             switch (level)
             {
                 case TerminalLogLevel.Input:
-                    return new UnityEngine.Color(0f, 0.81f, 0.82f);
+                    return "log-row-input";
                 case TerminalLogLevel.Success:
                 case TerminalLogLevel.PythonBridge:
-                    return new UnityEngine.Color(0.18f, 0.8f, 0.44f);
+                    return "log-row-success";
                 case TerminalLogLevel.Error:
-                    return new UnityEngine.Color(0.86f, 0.08f, 0.24f);
+                    return "log-row-error";
                 case TerminalLogLevel.Warning:
-                    return new UnityEngine.Color(1f, 0.75f, 0f);
+                    return "log-row-warning";
                 case TerminalLogLevel.System:
-                    return new UnityEngine.Color(0.61f, 0.35f, 0.71f);
+                    return "log-row-system";
                 default:
-                    return new UnityEngine.Color(0.69f, 0.75f, 0.77f);
+                    return "log-row-info";
             }
         }
 
@@ -261,13 +259,7 @@ namespace AdvancedTerminal.UI.Components
 
         private void HandleWheelPinning(WheelEvent args)
         {
-            pinnedToBottom = args.delta.y < 0f || IsNearBottom();
-        }
-
-        private bool IsNearBottom()
-        {
-            return renderedRows.Count > 0 &&
-                   renderedRows.Count <= Math.Max(logList.visibleItemCount, 1) + 4;
+            pinnedToBottom = args.delta.y < 0f;
         }
 
         private void CollapseSuggestions()
@@ -297,22 +289,28 @@ namespace AdvancedTerminal.UI.Components
             while (renderedRows.Count > viewportCeiling)
             {
                 renderedRows.RemoveAt(0);
+                rowHost.RemoveAt(0);
             }
-        }
-
-        private void RebindList()
-        {
-            logList.itemsSource = null;
-            logList.itemsSource = renderedRows;
-            logList.RefreshItems();
         }
 
         private void ScrollToEnd()
         {
-            if (renderedRows.Count > 0)
+            logScroll.scrollOffset = new Vector2(0f, float.MaxValue);
+        }
+
+        private void EvaluatePinning()
+        {
+            Rect viewport = logScroll.contentViewport;
+            Rect content = logScroll.contentRect;
+
+            if (content.height <= viewport.height)
             {
-                logList.ScrollToItem(renderedRows.Count - 1);
+                pinnedToBottom = true;
+                return;
             }
+
+            float remaining = content.yMax - viewport.yMax;
+            pinnedToBottom = remaining <= VirtualRowHeight * 2;
         }
 
         private void UpdateStatus()

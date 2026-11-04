@@ -1,17 +1,19 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using AdvancedTerminal.Core;
-using AdvancedTerminal.Utility;
+using UnityAdvancedTerminal.Core;
+using UnityAdvancedTerminal.Utility;
 using UnityEditor;
+using UnityEngine;
 using UnityEngine.UIElements;
 
-namespace AdvancedTerminal.UI.Components
+namespace UnityAdvancedTerminal.UI.Components
 {
     public sealed class EnvironmentTreeComponent
     {
         private const int VariableRetention = 64;
         private const int ProcessRetention = 32;
+        private const string WorkspaceFolderName = "PythonScripts";
 
         private readonly ITerminalEngine engine;
         private readonly IScriptStorageManager storage;
@@ -19,6 +21,8 @@ namespace AdvancedTerminal.UI.Components
         private readonly TreeView workspaceTree;
         private readonly ListView quickVariableList;
         private readonly ListView processMonitorList;
+
+        private readonly List<TreeViewItemData<string>> treeRoots = new List<TreeViewItemData<string>>();
 
         private List<string> variableRows = new List<string>();
         private List<string> processRows = new List<string>();
@@ -31,8 +35,9 @@ namespace AdvancedTerminal.UI.Components
 
             host.Add(BuildSectionHeader("Project Environment Explorer"));
 
-            workspaceTree = new TreeView(MakeWorkspaceRow, 22, MakeWorkspaceRootItem);
+            workspaceTree = new TreeView(MakeWorkspaceRow, 22, BindWorkspaceRow);
             workspaceTree.name = "workspace-tree";
+            workspaceTree.selectionType = TreeViewSelectionType.Single;
             workspaceTree.onSelectionChanged += HandleWorkspaceSelection;
             host.Add(workspaceTree);
 
@@ -42,10 +47,14 @@ namespace AdvancedTerminal.UI.Components
 
             host.Add(BuildSectionHeader("Quick Variables"));
             quickVariableList = new ListView(variableRows, 20, MakeVariableRow, BindVariableRow);
+            quickVariableList.selectionType = SelectionType.None;
+            quickVariableList.AddToClassList("variable-list");
             host.Add(quickVariableList);
 
             host.Add(BuildSectionHeader("Process Monitor"));
             processMonitorList = new ListView(processRows, 20, MakeProcessRow, BindProcessRow);
+            processMonitorList.selectionType = SelectionType.None;
+            processMonitorList.AddToClassList("process-monitor");
             host.Add(processMonitorList);
 
             engine.QuickVariableChanged += HandleVariableChange;
@@ -75,27 +84,20 @@ namespace AdvancedTerminal.UI.Components
         private void ReloadInventory()
         {
             engine.RefreshEnvironmentTree();
-            workspaceTree.rootItems = BuildDirectoryNodes();
+            treeRoots.Clear();
+            treeRoots.AddRange(BuildDirectoryNodes());
+            workspaceTree.rootElements = treeRoots;
             workspaceTree.Reload();
         }
 
-        private List<string> BuildDirectoryNodes()
+        private IEnumerable<TreeViewItemData<string>> BuildDirectoryNodes()
         {
-            List<string> nodes = new List<string>();
-
             foreach (StoredScript script in storage.EnumerateScripts())
             {
-                nodes.Add($"{script.FileName} ({script.LineCount} lines)");
+                yield return new TreeViewItemData<string>(
+                    script.FullPath.GetHashCode(),
+                    $"{script.FileName} ({script.LineCount} lines)");
             }
-
-            return nodes;
-        }
-
-        private VisualElement MakeWorkspaceRootItem()
-        {
-            Label label = new Label(Path.GetFileName(storage.WorkspaceRoot));
-            label.AddToClassList("tree-root-label");
-            return label;
         }
 
         private VisualElement MakeWorkspaceRow(int index)
@@ -103,6 +105,21 @@ namespace AdvancedTerminal.UI.Components
             Label label = new Label();
             label.AddToClassList("tree-row");
             return label;
+        }
+
+        private void BindWorkspaceRow(VisualElement element, int index)
+        {
+            ((Label)element).text = ResolveNodeText(index);
+        }
+
+        private string ResolveNodeText(int index)
+        {
+            if (index < 0 || index >= treeRoots.Count)
+            {
+                return string.Empty;
+            }
+
+            return treeRoots[index].GetData();
         }
 
         private void HandleWorkspaceSelection(IEnumerable<object> selection)
@@ -122,21 +139,36 @@ namespace AdvancedTerminal.UI.Components
 
         private void OpenScriptInEditor(string fileName)
         {
-            string absolute = Path.Combine(storage.WorkspaceRoot, fileName);
+            string assetPath = ToAssetPath(Path.Combine(storage.WorkspaceRoot, fileName));
 
-            if (!File.Exists(absolute))
+            if (assetPath == null)
             {
                 return;
             }
 
-            TextAsset asset = AssetDatabase.LoadAssetAtPath<TextAsset>(
-                absolute.Replace("\\", "/").Replace(Directory.GetCurrentDirectory().Replace("\\", "/") + "/", ""));
+            TextAsset asset = AssetDatabase.LoadAssetAtPath<TextAsset>(assetPath);
 
             if (asset != null)
             {
                 EditorGUIUtility.PingObject(asset);
                 AssetDatabase.OpenAsset(asset);
             }
+        }
+
+        private static string ToAssetPath(string absolutePath)
+        {
+            string normalized = absolutePath.Replace('\\', '/');
+            string projectRoot = Directory.GetCurrentDirectory().Replace('\\', '/').TrimEnd('/') + "/";
+
+            if (!normalized.StartsWith(projectRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            string relative = normalized.Substring(projectRoot.Length);
+            int marker = relative.IndexOf(WorkspaceFolderName + "/", StringComparison.Ordinal);
+
+            return marker < 0 ? null : relative.Substring(0, marker + WorkspaceFolderName.Length);
         }
 
         private VisualElement MakeVariableRow(int index)
