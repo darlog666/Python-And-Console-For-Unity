@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using AdvancedTerminal.Architecture.Observers;
 using AdvancedTerminal.Core;
+using UnityEngine;
 using UnityEngine.UIElements;
 
 namespace AdvancedTerminal.UI.Components
@@ -30,16 +31,20 @@ namespace AdvancedTerminal.UI.Components
 
             logList = new ListView(renderedRows, VirtualRowHeight, MakeLogRow, BindLogRow);
             logList.name = "console-log-list";
-            logList.virtualizationMethod = CollectionVirtualizationMethod.DynamicHeight;
+            logList.virtualizationMethod = CollectionVirtualizationMethod.FixedHeight;
+            logList.selectionType = SelectionType.None;
+            logList.showBorder = false;
             logList.AddToClassList("console-viewport");
-            logList.RegisterCallback<ScrollWheelEvent>(HandleWheelPinning);
+            logList.RegisterCallback<WheelEvent>(HandleWheelPinning);
             host.Add(logList);
 
             suggestionPopup = BuildSuggestionPopup();
             host.Add(suggestionPopup);
 
-            commandInput = new TextField { multiline = false };
+            commandInput = new TextField();
             commandInput.name = "console-input";
+            commandInput.multiline = false;
+            commandInput.isDelayed = false;
             commandInput.AddToClassList("console-input");
             commandInput.RegisterValueChangedCallback(HandleInputMutation);
             commandInput.RegisterCallback<KeyDownEvent>(HandleInputKey);
@@ -254,7 +259,7 @@ namespace AdvancedTerminal.UI.Components
             CollapseSuggestions();
         }
 
-        private void HandleWheelPinning(ScrollWheelEvent args)
+        private void HandleWheelPinning(WheelEvent args)
         {
             pinnedToBottom = args.delta.y < 0f || IsNearBottom();
         }

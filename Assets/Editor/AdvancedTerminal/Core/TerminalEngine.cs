@@ -9,6 +9,7 @@ using AdvancedTerminal.Architecture.Commands;
 using AdvancedTerminal.Architecture.Observers;
 using AdvancedTerminal.Architecture.Pipelines;
 using UnityEditor;
+using UnityEngine;
 
 namespace AdvancedTerminal.Core
 {
@@ -45,6 +46,18 @@ namespace AdvancedTerminal.Core
         Task RunPythonAsync(string statement);
 
         void BindQuickVariable(string name, string value);
+
+        bool ToggleLogMirror(bool enabled);
+
+        bool KillSwitch();
+
+        void ClearBuffers();
+
+        void RegisterMacro(string macroName, string scriptPath);
+
+        void ExecuteMacro(string macroName);
+
+        IReadOnlyDictionary<string, string> MacroBindings { get; }
 
         string ExportSession(bool asJson);
 
@@ -239,7 +252,7 @@ namespace AdvancedTerminal.Core
             return textPipeline.SerializeMatrix(snapshot);
         }
 
-        public void ToggleLogMirror(bool enabled)
+        public bool ToggleLogMirror(bool enabled)
         {
             activeLoggingMirror = enabled;
 
@@ -247,16 +260,17 @@ namespace AdvancedTerminal.Core
             {
                 AttachLogMirror();
                 Emit("Unity Log Mirror engaged.", TerminalLogLevel.System);
-                return;
+                return true;
             }
 
             DetachLogMirror();
             Emit("Unity Log Mirror disengaged.", TerminalLogLevel.System);
+            return false;
         }
 
-        public void KillSwitch()
+        public bool KillSwitch()
         {
-            pythonBridge.KillActiveExecution();
+            return pythonBridge.KillActiveExecution();
         }
 
         public void ClearBuffers()
