@@ -86,8 +86,7 @@ namespace UnityAdvancedTerminal.UI.Components
             engine.RefreshEnvironmentTree();
             treeRoots.Clear();
             treeRoots.AddRange(BuildDirectoryNodes());
-            workspaceTree.rootElements = treeRoots;
-            workspaceTree.Reload();
+            workspaceTree.SetRootItems(treeRoots);
         }
 
         private IEnumerable<TreeViewItemData<string>> BuildDirectoryNodes()
