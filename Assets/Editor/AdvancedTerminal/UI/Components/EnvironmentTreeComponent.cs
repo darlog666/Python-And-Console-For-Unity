@@ -177,7 +177,7 @@ namespace AdvancedTerminal.UI.Components
             Rebind(quickVariableList, variableRows);
         }
 
-        private static void Rebind(ListView list, IList<string> rows)
+        private static void Rebind(ListView list, List<string> rows)
         {
             list.itemsSource = null;
             list.itemsSource = rows;

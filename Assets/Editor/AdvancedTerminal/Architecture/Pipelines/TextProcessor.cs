@@ -186,9 +186,9 @@ namespace AdvancedTerminal.Architecture.Pipelines
                 return string.Empty;
             }
 
-            return input.Replace("&", "\\u0026")
-                        .Replace("<", "\\u003c")
-                        .Replace(">", "\\u003e");
+            return input.Replace("&", "&amp;")
+                        .Replace("<", "&lt;")
+                        .Replace(">", "&gt;");
         }
 
         private static class LevelPalette
