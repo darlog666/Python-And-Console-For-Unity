@@ -47,9 +47,9 @@ namespace AdvancedTerminal.Core
 
         void BindQuickVariable(string name, string value);
 
-        void ToggleLogMirror(bool enabled);
+        bool ToggleLogMirror(bool enabled);
 
-        void KillSwitch();
+        bool KillSwitch();
 
         void ClearBuffers();
 
@@ -252,7 +252,7 @@ namespace AdvancedTerminal.Core
             return textPipeline.SerializeMatrix(snapshot);
         }
 
-        public void ToggleLogMirror(bool enabled)
+        public bool ToggleLogMirror(bool enabled)
         {
             activeLoggingMirror = enabled;
 
@@ -260,16 +260,17 @@ namespace AdvancedTerminal.Core
             {
                 AttachLogMirror();
                 Emit("Unity Log Mirror engaged.", TerminalLogLevel.System);
-                return;
+                return true;
             }
 
             DetachLogMirror();
             Emit("Unity Log Mirror disengaged.", TerminalLogLevel.System);
+            return false;
         }
 
-        public void KillSwitch()
+        public bool KillSwitch()
         {
-            pythonBridge.KillActiveExecution();
+            return pythonBridge.KillActiveExecution();
         }
 
         public void ClearBuffers()

@@ -48,7 +48,7 @@ namespace AdvancedTerminal.Core
 
         Task<int> SubmitStatementAsync(string statement, CancellationToken externalToken);
 
-        void KillActiveExecution();
+        bool KillActiveExecution();
 
         IReadOnlyList<string> ProbeQuickVariables();
     }
@@ -284,7 +284,7 @@ namespace AdvancedTerminal.Core
             }
         }
 
-        public void KillActiveExecution()
+        public bool KillActiveExecution()
         {
             lock (processGate)
             {
@@ -292,19 +292,34 @@ namespace AdvancedTerminal.Core
                 {
                     logSink.Invoke("No live Python process available for termination.",
                         TerminalLogLevel.Warning);
-                    return;
+                    return false;
                 }
 
                 try
                 {
-                    hostedProcess.Kill();
+                    TerminateProcessTree(hostedProcess);
                     logSink.Invoke($"Kill switch engaged on execution #{activeExecutionId}.",
                         TerminalLogLevel.Error);
+                    return true;
                 }
                 catch (Exception failure)
                 {
                     logSink.Invoke($"Kill switch failure: {failure.Message}", TerminalLogLevel.Error);
+                    return false;
                 }
+            }
+        }
+
+        private static void TerminateProcessTree(Process target)
+        {
+            try
+            {
+                target.Kill(entireProcessTree: true);
+                return;
+            }
+            catch (PlatformNotSupportedException)
+            {
+                target.Kill();
             }
         }
 

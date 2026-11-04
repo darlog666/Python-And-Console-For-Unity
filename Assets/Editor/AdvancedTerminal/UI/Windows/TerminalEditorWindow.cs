@@ -48,6 +48,10 @@ namespace AdvancedTerminal.UI.Windows
             window.Show();
         }
 
+        public static bool LogMirrorEngaged { get; private set; }
+
+        public static bool LastKillSucceeded { get; private set; }
+
         private void OnEnable()
         {
             VisualTreeAsset tree = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(UxmlPath);
@@ -128,13 +132,21 @@ namespace AdvancedTerminal.UI.Windows
             addMacroButton = rootVisualElement.Q<Button>("add-macro-button");
 
             logMirrorToggle.RegisterValueChangedCallback(args =>
-                engine.ToggleLogMirror(args.newValue));
+            {
+                LogMirrorEngaged = engine.ToggleLogMirror(args.newValue);
+                logMirrorToggle.EnableInClassList("toggle-button-active", LogMirrorEngaged);
+            });
 
             exportDropdown.choices = new List<string>(ExportFormats.Keys);
             exportDropdown.RegisterValueChangedCallback(args => RunSessionExport(args.newValue));
 
-            killSwitchButton.clicked += engine.KillSwitch;
+            killSwitchButton.clicked += TriggerKillSwitch;
             addMacroButton.clicked += PresentMacroWizard;
+        }
+
+        private void TriggerKillSwitch()
+        {
+            LastKillSucceeded = engine.KillSwitch();
         }
 
         private void MountPanels()
