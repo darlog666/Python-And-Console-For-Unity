@@ -49,6 +49,16 @@ namespace AdvancedTerminal.Core
 
         void ToggleLogMirror(bool enabled);
 
+        void KillSwitch();
+
+        void ClearBuffers();
+
+        void RegisterMacro(string macroName, string scriptPath);
+
+        void ExecuteMacro(string macroName);
+
+        IReadOnlyDictionary<string, string> MacroBindings { get; }
+
         string ExportSession(bool asJson);
 
         void RefreshEnvironmentTree();

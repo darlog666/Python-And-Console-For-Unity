@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UXML xmlns="UnityEngine.UIElements">
+    <Style src="TerminalStyles.uss" />
+    <VisualElement name="terminal-root" class="terminal-root">
+        <VisualElement name="terminal-toolbar" class="terminal-toolbar">
+            <VisualElement name="macro-binder-bar" class="macro-binder-bar" />
+            <Button name="add-macro-button" text="Add Macro" class="tool-button" />
+            <Toggle name="log-mirror-toggle" label="Unity Log Mirror" class="tool-button" />
+            <VisualElement class="toolbar-spacer" />
+            <DropdownField name="export-dropdown" label="Export Session" class="export-dropdown" />
+            <Button name="kill-switch-button" text="KILL" class="kill-switch-button" />
+        </VisualElement>
+        <VisualElement name="terminal-body" class="terminal-body">
+            <VisualElement name="left-sidebar" class="left-sidebar" />
+            <VisualElement name="center-panel" class="center-panel" />
+            <VisualElement name="right-panel" class="right-panel" />
+        </VisualElement>
+    </VisualElement>
+</UXML>

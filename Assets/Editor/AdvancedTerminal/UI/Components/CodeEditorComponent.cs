@@ -5,6 +5,7 @@ using AdvancedTerminal.Architecture.Observers;
 using AdvancedTerminal.Core;
 using AdvancedTerminal.Utility;
 using UnityEditor;
+using UnityEngine;
 using UnityEngine.UIElements;
 
 namespace AdvancedTerminal.UI.Components
