@@ -87,8 +87,10 @@ namespace AdvancedTerminal.UI.Components
             highlightLayer.name = "highlight-layer";
             highlightLayer.AddToClassList("highlight-layer");
 
-            codeField = new TextField { multiline = true, isDelayed = false };
+            codeField = new TextField();
             codeField.name = "python-code-field";
+            codeField.multiline = true;
+            codeField.isDelayed = false;
             codeField.AddToClassList("code-field");
             codeField.value = ReadActiveFile();
             codeField.RegisterCallback<KeyDownEvent>(HandleCodeKey);

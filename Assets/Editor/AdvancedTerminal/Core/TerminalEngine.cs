@@ -9,6 +9,7 @@ using AdvancedTerminal.Architecture.Commands;
 using AdvancedTerminal.Architecture.Observers;
 using AdvancedTerminal.Architecture.Pipelines;
 using UnityEditor;
+using UnityEngine;
 
 namespace AdvancedTerminal.Core
 {
@@ -45,6 +46,8 @@ namespace AdvancedTerminal.Core
         Task RunPythonAsync(string statement);
 
         void BindQuickVariable(string name, string value);
+
+        void ToggleLogMirror(bool enabled);
 
         string ExportSession(bool asJson);
 
