@@ -1,102 +1,103 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
+using UnityAdvancedTerminal.Architecture.Commands;
 using UnityAdvancedTerminal.Architecture.Observers;
+using UnityAdvancedTerminal.Utility;
 
 namespace UnityAdvancedTerminal.Architecture.Commands
 {
     public sealed class SystemCmdCommand : TerminalCommandBase
     {
-        private const int TimeoutMilliseconds = 30000;
+        private const int TimeoutMilliseconds = 60000;
 
         public SystemCmdCommand()
-            : base("system", "Executes a native OS shell command outside the Python runtime.",
-                "system <ls|pwd|whoami|echo ...>", "os", "shell")
+             : base("system", "Executes a native OS shell command.", "system <command>", "os", "shell")
         {
         }
 
         public override void Execute(TerminalCommandContext context)
         {
             string payload = RebuildPayload(context);
-
             if (string.IsNullOrWhiteSpace(payload))
             {
                 RequireUsage(context, "a native executable token is required");
                 return;
             }
-
-            RunNativeAsync(context, payload).ConfigureAwait(false);
+            _ = RunNativeAsync(context, payload);
         }
 
         private string RebuildPayload(TerminalCommandContext context)
         {
-            StringBuilder builder = new StringBuilder();
-
-            for (int i = 0; i < context.Arguments.Count; i++)
-            {
-                if (context.Arguments[i].StartsWith("-", StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
-                if (builder.Length > 0)
-                {
-                    builder.Append(' ');
-                }
-
-                builder.Append(context.Arguments[i]);
-            }
-
-            return builder.ToString();
+            return string.Join(" ", context.Arguments);
         }
 
         private async Task RunNativeAsync(TerminalCommandContext context, string payload)
         {
             ProcessStartInfo startInfo = BuildStartInfo(payload);
-            Process process = new Process { StartInfo = startInfo };
-
+            Process process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
+            TaskCompletionSource<bool> exitTcs = new TaskCompletionSource<bool>();
+            
+            process.OutputDataReceived += (sender, args) =>
+            {
+                if (args.Data != null)
+                {
+                    EditorMainThreadDispatcher.Enqueue(() => context.EmitLog(args.Data, TerminalLogLevel.Information));
+                }
+            };
+            process.ErrorDataReceived += (sender, args) =>
+            {
+                if (args.Data != null)
+                {
+                    EditorMainThreadDispatcher.Enqueue(() => context.EmitLog(args.Data, TerminalLogLevel.Error));
+                }
+            };
+            process.Exited += (sender, args) => exitTcs.TrySetResult(true);
+            
             try
             {
                 process.Start();
+                process.BeginOutputReadLine();
+                process.BeginErrorReadLine();
+                
+                Task delayTask = Task.Delay(TimeoutMilliseconds);
+                Task completedTask = await Task.WhenAny(exitTcs.Task, delayTask);
+                
+                if (completedTask == delayTask)
+                {
+                    TryTerminate(process, context);
+                    process.Dispose();
+                    return;
+                }
+                
+                process.WaitForExit(); 
+                
+                int code = process.ExitCode;
+                EditorMainThreadDispatcher.Enqueue(() => 
+                    context.EmitLog($"Process exit code: {code}",
+                        code == 0 ? TerminalLogLevel.Success : TerminalLogLevel.Warning));
             }
             catch (Exception failure)
             {
-                context.EmitLog($"Native launch failed: {failure.Message}", TerminalLogLevel.Error);
-                process.Dispose();
-                return;
+                EditorMainThreadDispatcher.Enqueue(() => 
+                    context.EmitLog($"Native launch failed: {failure.Message}", TerminalLogLevel.Error));
             }
-
-            Task<string> stdoutTask = process.StandardOutput.ReadToEndAsync();
-            Task<string> stderrTask = process.StandardError.ReadToEndAsync();
-
-            bool exited = await Task.Run(() => process.WaitForExit(TimeoutMilliseconds))
-                .ConfigureAwait(false);
-
-            if (!exited)
+            finally
             {
-                TryTerminate(process, context);
-                return;
+                process.Dispose();
             }
-
-            string stdout = await stdoutTask.ConfigureAwait(false);
-            string stderr = await stderrTask.ConfigureAwait(false);
-
-            ReportStream(context, stdout, TerminalLogLevel.Information);
-            ReportStream(context, stderr, TerminalLogLevel.Error);
-
-            context.EmitLog($"Process exit code: {process.ExitCode}",
-                process.ExitCode == 0 ? TerminalLogLevel.Success : TerminalLogLevel.Warning);
         }
 
         private ProcessStartInfo BuildStartInfo(string payload)
         {
             bool isWindows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
-            ProcessStartInfo startInfo = new ProcessStartInfo
+            return new ProcessStartInfo
             {
-                FileName = isWindows ? "cmd.exe" : "/bin/sh",
+                FileName = isWindows ? "cmd.exe" : "/bin/bash",
                 Arguments = isWindows ? $"/c {payload}" : $"-c \"{payload}\"",
                 UseShellExecute = false,
                 CreateNoWindow = true,
@@ -106,45 +107,20 @@ namespace UnityAdvancedTerminal.Architecture.Commands
                 StandardOutputEncoding = Encoding.UTF8,
                 StandardErrorEncoding = Encoding.UTF8
             };
-
-            return startInfo;
         }
 
         private void TryTerminate(Process process, TerminalCommandContext context)
         {
             try
             {
-                process.Kill();
-                context.EmitLog("Native process exceeded timeout window and was terminated.",
-                    TerminalLogLevel.Warning);
+                if (!process.HasExited) process.Kill();
+                EditorMainThreadDispatcher.Enqueue(() => 
+                    context.EmitLog("Native process exceeded timeout window and was terminated.", TerminalLogLevel.Warning));
             }
             catch (Exception failure)
             {
-                context.EmitLog($"Kill switch tripped but termination failed: {failure.Message}",
-                    TerminalLogLevel.Error);
-            }
-            finally
-            {
-                process.Dispose();
-            }
-        }
-
-        private void ReportStream(TerminalCommandContext context, string stream,
-            TerminalLogLevel level)
-        {
-            if (string.IsNullOrEmpty(stream))
-            {
-                return;
-            }
-
-            string[] lines = stream.Replace("\r\n", "\n").Split('\n');
-
-            for (int i = 0; i < lines.Length; i++)
-            {
-                if (!string.IsNullOrWhiteSpace(lines[i]))
-                {
-                    context.EmitLog(lines[i], level);
-                }
+                EditorMainThreadDispatcher.Enqueue(() => 
+                    context.EmitLog($"Termination failed: {failure.Message}", TerminalLogLevel.Error));
             }
         }
     }

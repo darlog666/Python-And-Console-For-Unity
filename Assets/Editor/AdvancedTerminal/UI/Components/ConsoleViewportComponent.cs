@@ -30,7 +30,7 @@ namespace UnityAdvancedTerminal.UI.Components
         {
             this.engine = engine ?? throw new ArgumentNullException(nameof(engine));
 
-            logScroll = new ScrollView(Orientation.Vertical);
+            logScroll = new ScrollView(ScrollViewMode.Vertical);
             logScroll.name = "console-log-scroll";
             logScroll.AddToClassList("console-viewport");
             logScroll.RegisterCallback<WheelEvent>(HandleWheelPinning);
@@ -300,8 +300,8 @@ namespace UnityAdvancedTerminal.UI.Components
 
         private void EvaluatePinning()
         {
-            Rect viewport = logScroll.contentViewport;
-            Rect content = logScroll.contentRect;
+            Rect viewport = logScroll.contentViewport.layout;
+            Rect content = logScroll.contentContainer.layout;
 
             if (content.height <= viewport.height)
             {

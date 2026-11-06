@@ -1,0 +1,63 @@
+2026-11-06 01:00:39.027 | Success | core | Console buffer purged.
+2026-11-06 01:00:40.919 | Input | stdin | >>> print('Hello Unity Terminal')
+print("testss")
+
+a = 1
+
+print(a)
+2026-11-06 01:00:42.915 | Information | core | Environment tree refreshed for C:\Users\MSI\cs2\Assets\Editor\PythonScripts
+2026-11-06 01:00:43.957 | Input | stdin | >>> print('Hello Unity Terminal')
+print("testss")
+
+a = 1
+
+print(a)
+2026-11-06 01:00:49.412 | Warning | core | Execution #3 finished in 60040,5 ms | peak RSS 0 MB | exit 137
+2026-11-06 01:00:49.412 | Information | core | {"evt": "out", "id": 4, "data": "Hello Unity Terminal\ntestss\n1\n"}
+2026-11-06 01:00:49.412 | Information | core | {"evt": "var", "id": 0, "data": "a=1"}
+2026-11-06 01:00:54.821 | Input | stdin | >>> print('Hello Unity Terminal')
+print("testss")
+
+a = 1
+
+print(a)
+2026-11-06 01:01:00.067 | System | engine | Unity Log Mirror engaged.
+2026-11-06 01:01:05.688 | Input | stdin | >>> print('Hello Unity Terminal')
+print("testss")
+
+a = 1
+
+print(a)
+2026-11-06 01:01:09.119 | Input | stdin | >>> print('Hello Unity Terminal')
+print("testss")
+
+a = 1
+
+print(a)
+2026-11-06 01:01:10.806 | Input | stdin | >>> print('Hello Unity Terminal')
+print("testss")
+
+a = 1
+
+print(a)
+2026-11-06 01:01:11.023 | Input | stdin | >>> print('Hello Unity Terminal')
+print("testss")
+
+a = 1
+
+print(a)
+2026-11-06 01:01:11.230 | Input | stdin | >>> print('Hello Unity Terminal')
+print("testss")
+
+a = 1
+
+print(a)
+2026-11-06 01:01:19.090 | Information | mirror | Environment tree refreshed for C:\Users\MSI\cs2\Assets\Editor\PythonScripts
+2026-11-06 01:01:21.578 | Success | mirror | PEP8 audit clean.
+2026-11-06 01:01:25.579 | Input | stdin | >>> print('Hello Unity Terminal')
+print("testss")
+
+a = 1
+
+print(a)
+2026-11-06 01:01:31.702 | Information | mirror | Environment tree refreshed for C:\Users\MSI\cs2\Assets\Editor\PythonScripts

@@ -15,8 +15,8 @@ namespace UnityAdvancedTerminal.Core
         private static readonly Lazy<TerminalServiceLocator> sharedInstance =
             new Lazy<TerminalServiceLocator>(() => new TerminalServiceLocator());
 
-        private readonly ConcurrentDictionary<Type, ITerminalService> registry =
-            new ConcurrentDictionary<Type, ITerminalService>();
+        private readonly ConcurrentDictionary<Type, object> registry =
+            new ConcurrentDictionary<Type, object>();
 
         private readonly object registrationGate = new object();
 
@@ -60,7 +60,7 @@ namespace UnityAdvancedTerminal.Core
                 throw new ObjectDisposedException(nameof(TerminalServiceLocator));
             }
 
-            if (registry.TryGetValue(typeof(T), out ITerminalService service))
+            if (registry.TryGetValue(typeof(T), out object service))
             {
                 return service as T;
             }
@@ -77,7 +77,7 @@ namespace UnityAdvancedTerminal.Core
                 return false;
             }
 
-            if (registry.TryGetValue(typeof(T), out ITerminalService stored))
+            if (registry.TryGetValue(typeof(T), out object stored))
             {
                 service = stored as T;
                 return service != null;
@@ -95,9 +95,12 @@ namespace UnityAdvancedTerminal.Core
         {
             lock (registrationGate)
             {
-                if (registry.TryRemove(typeof(T), out ITerminalService service))
+                if (registry.TryRemove(typeof(T), out object service))
                 {
-                    service.Teardown();
+                    if (service is ITerminalService terminalService)
+                    {
+                        terminalService.Teardown();
+                    }
                     ServiceUnregistered?.Invoke(typeof(T));
                 }
             }
@@ -122,9 +125,12 @@ namespace UnityAdvancedTerminal.Core
             {
                 foreach (Type contract in registry.Keys)
                 {
-                    if (registry.TryRemove(contract, out ITerminalService service))
+                    if (registry.TryRemove(contract, out object service))
                     {
-                        service.Teardown();
+                        if (service is ITerminalService terminalService)
+                        {
+                            terminalService.Teardown();
+                        }
                         ServiceUnregistered?.Invoke(contract);
                     }
                 }

@@ -8,48 +8,32 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityAdvancedTerminal.Architecture.Observers;
+using UnityAdvancedTerminal.Utility;
 
 namespace UnityAdvancedTerminal.Core
 {
-    public enum PythonBackendKind
-    {
-        SystemProcess,
-        PythonNetRuntime
-    }
+    public enum PythonBackendKind { SystemProcess, PythonNetRuntime }
 
     public sealed class PythonExecutionRecord
     {
         public int ExecutionId { get; set; }
-
         public string Source { get; set; }
-
         public DateTimeOffset StartedUtc { get; set; }
-
         public TimeSpan Duration { get; set; }
-
         public long PeakWorkingSetBytes { get; set; }
-
         public int ExitCode { get; set; }
-
         public bool Terminated { get; set; }
     }
 
     public interface IPythonBridge : ITerminalService
     {
         bool IsRunning { get; }
-
         PythonBackendKind ActiveBackend { get; }
-
         event Action<PythonExecutionRecord> ExecutionCompleted;
-
         Task StartAsync(CancellationToken externalToken);
-
         Task StopAsync();
-
         Task<int> SubmitStatementAsync(string statement, CancellationToken externalToken);
-
         bool KillActiveExecution();
-
         IReadOnlyList<string> ProbeQuickVariables();
     }
 
@@ -66,7 +50,6 @@ namespace UnityAdvancedTerminal.Core
         private readonly Action<string, TerminalLogLevel> logSink;
         private readonly Func<string> bootstrapSupplier;
         private readonly List<string> trackedGlobals = new List<string>();
-
         private readonly SemaphoreSlim executionSlot = new SemaphoreSlim(1, 1);
 
         private Process hostedProcess;
@@ -86,33 +69,19 @@ namespace UnityAdvancedTerminal.Core
         }
 
         public string ServiceName => "python-bridge";
-
         public bool IsRunning
         {
-            get
-            {
-                lock (processGate)
-                {
-                    return hostedProcess != null && !hostedProcess.HasExited;
-                }
-            }
+            get { lock (processGate) { return hostedProcess != null && !hostedProcess.HasExited; } }
         }
-
         public PythonBackendKind ActiveBackend => backendKind;
-
         public event Action<PythonExecutionRecord> ExecutionCompleted;
 
         public async Task StartAsync(CancellationToken externalToken)
         {
             await executionSlot.WaitAsync(externalToken).ConfigureAwait(false);
-
             try
             {
-                if (IsRunning)
-                {
-                    return;
-                }
-
+                if (IsRunning) return;
                 PreparePythonNetProbe();
 
                 int assignedPort = ReserveIpcPort();
@@ -128,10 +97,7 @@ namespace UnityAdvancedTerminal.Core
                 spawned.OutputDataReceived += HandleOutputLine;
                 spawned.ErrorDataReceived += HandleErrorLine;
 
-                lock (processGate)
-                {
-                    hostedProcess = spawned;
-                }
+                lock (processGate) { hostedProcess = spawned; }
 
                 spawned.Start();
                 spawned.BeginOutputReadLine();
@@ -140,53 +106,36 @@ namespace UnityAdvancedTerminal.Core
                 loopCancellation = new CancellationTokenSource();
                 _ = PumpSocketAsync(loopCancellation.Token);
 
-                bool handshake = await Task.WhenAny(readySignal.Task,
-                        Task.Delay(8000, externalToken))
-                    .ConfigureAwait(false) == readySignal.Task &&
-                    await readySignal.Task.ConfigureAwait(false);
+                bool handshake = await Task.WhenAny(readySignal.Task, Task.Delay(8000, externalToken)).ConfigureAwait(false) == readySignal.Task && await readySignal.Task.ConfigureAwait(false);
 
                 if (!handshake)
                 {
-                    logSink.Invoke("Bootstrap handshake timed out; runtime degraded to stateless mode.",
-                        TerminalLogLevel.Warning);
+                    EditorMainThreadDispatcher.Enqueue(() => logSink.Invoke("Bootstrap handshake timed out; runtime degraded to stateless mode.", TerminalLogLevel.Warning));
                 }
                 else
                 {
-                    logSink.Invoke($"Python runtime online via {backendKind} on IPC port {assignedPort}.",
-                        TerminalLogLevel.Success);
+                    EditorMainThreadDispatcher.Enqueue(() => logSink.Invoke($"Python runtime online via {backendKind} on IPC port {assignedPort}.", TerminalLogLevel.Success));
                 }
             }
-            finally
-            {
-                executionSlot.Release();
-            }
+            finally { executionSlot.Release(); }
         }
 
         public async Task StopAsync()
         {
             await executionSlot.WaitAsync().ConfigureAwait(false);
-
             try
             {
-                Process target = null;
-
+                Process target;
                 lock (processGate)
                 {
-                    if (hostedProcess != null)
-                    {
-                        target = hostedProcess;
-                        hostedProcess = null;
-                    }
+                    target = hostedProcess;
+                    hostedProcess = null;
                 }
 
                 loopCancellation?.Cancel();
                 StopIpcListener();
 
-                if (target == null)
-                {
-                    return;
-                }
-
+                if (target == null) return;
                 target.Exited -= HandleProcessExit;
 
                 try
@@ -194,36 +143,25 @@ namespace UnityAdvancedTerminal.Core
                     if (!target.HasExited)
                     {
                         target.StandardInput.Close();
-
-                        if (!target.WaitForExit(1500))
-                        {
-                            target.Kill();
-                        }
+                        if (!target.WaitForExit(1500)) target.Kill();
                     }
                 }
                 catch (Exception failure)
                 {
-                    logSink.Invoke($"Graceful shutdown failed: {failure.Message}", TerminalLogLevel.Warning);
+                    EditorMainThreadDispatcher.Enqueue(() => logSink.Invoke($"Graceful shutdown failed: {failure.Message}", TerminalLogLevel.Warning));
                 }
                 finally
                 {
                     target.Dispose();
-                    logSink.Invoke("Python runtime stopped.", TerminalLogLevel.System);
+                    EditorMainThreadDispatcher.Enqueue(() => logSink.Invoke("Python runtime stopped.", TerminalLogLevel.System));
                 }
             }
-            finally
-            {
-                executionSlot.Release();
-            }
+            finally { executionSlot.Release(); }
         }
 
         public async Task<int> SubmitStatementAsync(string statement, CancellationToken externalToken)
         {
-            if (string.IsNullOrWhiteSpace(statement))
-            {
-                return -1;
-            }
-
+            if (string.IsNullOrWhiteSpace(statement)) return -1;
             await executionSlot.WaitAsync(externalToken).ConfigureAwait(false);
 
             int executionId = Interlocked.Increment(ref nextExecutionId);
@@ -248,8 +186,7 @@ namespace UnityAdvancedTerminal.Core
                 }
                 else
                 {
-                    record.ExitCode = await RunSystemStatementAsync(statement, executionId, externalToken)
-                        .ConfigureAwait(false);
+                    record.ExitCode = await RunSystemStatementAsync(statement, executionId, externalToken).ConfigureAwait(false);
                 }
 
                 RefreshTrackedGlobals();
@@ -259,13 +196,13 @@ namespace UnityAdvancedTerminal.Core
             {
                 slotOwned = false;
                 record.Terminated = true;
-                logSink.Invoke($"Execution #{executionId} cancelled by caller.", TerminalLogLevel.Warning);
+                EditorMainThreadDispatcher.Enqueue(() => logSink.Invoke($"Execution #{executionId} cancelled by caller.", TerminalLogLevel.Warning));
                 return -1;
             }
             catch (Exception failure)
             {
                 record.ExitCode = -1;
-                logSink.Invoke($"Execution fault: {failure.Message}", TerminalLogLevel.Error);
+                EditorMainThreadDispatcher.Enqueue(() => logSink.Invoke($"Execution fault: {failure.Message}", TerminalLogLevel.Error));
                 return -1;
             }
             finally
@@ -275,12 +212,11 @@ namespace UnityAdvancedTerminal.Core
                 record.PeakWorkingSetBytes = SampleWorkingSet();
                 activeExecutionId = 0;
                 Interlocked.Exchange(ref completionProbe, 0);
-                ExecutionCompleted?.Invoke(record);
+                
+                PythonExecutionRecord finalRecord = record;
+                EditorMainThreadDispatcher.Enqueue(() => ExecutionCompleted?.Invoke(finalRecord));
 
-                if (slotOwned)
-                {
-                    executionSlot.Release();
-                }
+                if (slotOwned) executionSlot.Release();
             }
         }
 
@@ -290,21 +226,19 @@ namespace UnityAdvancedTerminal.Core
             {
                 if (hostedProcess == null || hostedProcess.HasExited)
                 {
-                    logSink.Invoke("No live Python process available for termination.",
-                        TerminalLogLevel.Warning);
+                    EditorMainThreadDispatcher.Enqueue(() => logSink.Invoke("No live Python process available for termination.", TerminalLogLevel.Warning));
                     return false;
                 }
-
                 try
                 {
                     TerminateProcessTree(hostedProcess);
-                    logSink.Invoke($"Kill switch engaged on execution #{activeExecutionId}.",
-                        TerminalLogLevel.Error);
+                    int currentId = activeExecutionId;
+                    EditorMainThreadDispatcher.Enqueue(() => logSink.Invoke($"Kill switch engaged on execution #{currentId}.", TerminalLogLevel.Error));
                     return true;
                 }
                 catch (Exception failure)
                 {
-                    logSink.Invoke($"Kill switch failure: {failure.Message}", TerminalLogLevel.Error);
+                    EditorMainThreadDispatcher.Enqueue(() => logSink.Invoke($"Kill switch failure: {failure.Message}", TerminalLogLevel.Error));
                     return false;
                 }
             }
@@ -312,24 +246,13 @@ namespace UnityAdvancedTerminal.Core
 
         private static void TerminateProcessTree(Process target)
         {
-            try
-            {
-                target.Kill();
-                return;
-            }
-            catch (Exception failure) when (failure is InvalidOperationException ||
-                                            failure is System.ComponentModel.Win32Exception)
-            {
-                return;
-            }
+            try { target.Kill(); }
+            catch (Exception) { }
         }
 
         public IReadOnlyList<string> ProbeQuickVariables()
         {
-            lock (variableGate)
-            {
-                return trackedGlobals.ToArray();
-            }
+            lock (variableGate) { return trackedGlobals.ToArray(); }
         }
 
         public void Teardown()
@@ -366,65 +289,43 @@ namespace UnityAdvancedTerminal.Core
         private static string ResolveInterpreterPath()
         {
             string configured = Environment.GetEnvironmentVariable("ADVTERM_PYTHON_PATH");
-
-            if (!string.IsNullOrEmpty(configured) && File.Exists(configured))
-            {
-                return configured;
-            }
-
+            if (!string.IsNullOrEmpty(configured) && File.Exists(configured)) return configured;
             return IsWindowsHost() ? "python" : "python3";
         }
 
-        private static bool IsWindowsHost()
-        {
-            return Path.DirectorySeparatorChar == '\\';
-        }
+        private static bool IsWindowsHost() => Path.DirectorySeparatorChar == '\\';
 
         private void PreparePythonNetProbe()
         {
             Type engineType = Type.GetType("Python.Runtime.PythonEngine, pythonnet");
-
-            if (engineType == null)
-            {
-                backendKind = PythonBackendKind.SystemProcess;
-                return;
-            }
-
+            if (engineType == null) { backendKind = PythonBackendKind.SystemProcess; return; }
             backendKind = PythonBackendKind.PythonNetRuntime;
-            logSink.Invoke("PythonNet assembly detected; in-process backend selected.",
-                TerminalLogLevel.System);
+            EditorMainThreadDispatcher.Enqueue(() => logSink.Invoke("PythonNet assembly detected; in-process backend selected.", TerminalLogLevel.System));
         }
 
-        private async Task<int> RunSystemStatementAsync(string statement, int executionId,
-            CancellationToken externalToken)
+        private async Task<int> RunSystemStatementAsync(string statement, int executionId, CancellationToken externalToken)
         {
             Process target;
-
             lock (processGate)
             {
-                if (hostedProcess == null || hostedProcess.HasExited)
-                {
-                    throw new InvalidOperationException("Python process is not running.");
-                }
-
+                if (hostedProcess == null || hostedProcess.HasExited) throw new InvalidOperationException("Python process is not running.");
                 target = hostedProcess;
             }
 
-            string framed = JsonFrameBuilder.BuildCommand(executionId, statement);
-            await target.StandardInput.WriteAsync(framed + "\n").ConfigureAwait(false);
+            string b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(statement));
+            string command = $"{{\"cmd\":\"exec\",\"id\":{executionId},\"src_b64\":\"{b64}\"}}\n";
+            
+            await target.StandardInput.WriteAsync(command).ConfigureAwait(false);
             await target.StandardInput.FlushAsync().ConfigureAwait(false);
 
             DateTime deadline = DateTime.UtcNow.AddSeconds(60);
-
-            while (Interlocked.CompareExchange(ref completionProbe, 0, executionId) != executionId &&
-                   DateTime.UtcNow < deadline)
+            while (Interlocked.CompareExchange(ref completionProbe, 0, executionId) != executionId && DateTime.UtcNow < deadline)
             {
                 externalToken.ThrowIfCancellationRequested();
                 await Task.Delay(StreamDrainTimeoutMs, externalToken).ConfigureAwait(false);
             }
 
-            bool completed = Interlocked.CompareExchange(ref completionProbe, 0, executionId) == executionId;
-            return completed ? 0 : 137;
+            return Interlocked.CompareExchange(ref completionProbe, 0, executionId) == executionId ? 0 : 137;
         }
 
         private Task<int> RunPythonNetStatementAsync(string statement)
@@ -433,16 +334,15 @@ namespace UnityAdvancedTerminal.Core
             {
                 try
                 {
-                    dynamic engine = Activator.CreateInstance(
-                        Type.GetType("Python.Runtime.PythonEngine, pythonnet"));
+                    dynamic engine = Activator.CreateInstance(Type.GetType("Python.Runtime.PythonEngine, pythonnet"));
                     dynamic result = engine.Exec(statement);
-                    logSink.Invoke(result?.ToString() ?? string.Empty, TerminalLogLevel.PythonBridge);
+                    string output = result?.ToString() ?? string.Empty;
+                    EditorMainThreadDispatcher.Enqueue(() => logSink.Invoke(output, TerminalLogLevel.PythonBridge));
                     return 0;
                 }
                 catch (Exception failure)
                 {
-                    logSink.Invoke($"PythonNet evaluation failed: {failure.Message}",
-                        TerminalLogLevel.Error);
+                    EditorMainThreadDispatcher.Enqueue(() => logSink.Invoke($"PythonNet evaluation failed: {failure.Message}", TerminalLogLevel.Error));
                     return 1;
                 }
             });
@@ -459,22 +359,14 @@ namespace UnityAdvancedTerminal.Core
                     probe.Stop();
                     return candidate;
                 }
-                catch (SocketException)
-                {
-                    continue;
-                }
+                catch (SocketException) { continue; }
             }
-
             return 0;
         }
 
         private void StartIpcListener(int port)
         {
-            if (port == 0)
-            {
-                return;
-            }
-
+            if (port == 0) return;
             lock (socketGate)
             {
                 ipcListener = new TcpListener(IPAddress.Loopback, port);
@@ -484,11 +376,7 @@ namespace UnityAdvancedTerminal.Core
 
         private void StopIpcListener()
         {
-            lock (socketGate)
-            {
-                ipcListener?.Stop();
-                ipcListener = null;
-            }
+            lock (socketGate) { ipcListener?.Stop(); ipcListener = null; }
         }
 
         private async Task PumpSocketAsync(CancellationToken token)
@@ -496,113 +384,148 @@ namespace UnityAdvancedTerminal.Core
             while (!token.IsCancellationRequested)
             {
                 TcpClient client = null;
-
                 try
                 {
                     client = await AcceptClientAsync(token).ConfigureAwait(false);
-
-                    if (client == null)
-                    {
-                        return;
-                    }
+                    if (client == null) return;
 
                     using (NetworkStream stream = client.GetStream())
                     using (StreamReader reader = new StreamReader(stream, Encoding.UTF8))
                     {
                         string line = await reader.ReadLineAsync().ConfigureAwait(false);
-
-                        if (!string.IsNullOrEmpty(line))
-                        {
-                            DispatchIncoming(line);
-                        }
+                        if (!string.IsNullOrEmpty(line)) DispatchIncoming(line);
                     }
                 }
-                catch (OperationCanceledException)
-                {
-                    return;
-                }
+                catch (OperationCanceledException) { return; }
                 catch (Exception failure)
                 {
-                    logSink.Invoke($"IPC pump error: {failure.Message}", TerminalLogLevel.Warning);
+                    EditorMainThreadDispatcher.Enqueue(() => logSink.Invoke($"IPC pump error: {failure.Message}", TerminalLogLevel.Warning));
                 }
-                finally
-                {
-                    client?.Dispose();
-                }
+                finally { client?.Dispose(); }
             }
         }
 
         private async Task<TcpClient> AcceptClientAsync(CancellationToken token)
         {
             TcpListener listener;
-
-            lock (socketGate)
-            {
-                listener = ipcListener;
-            }
-
-            if (listener == null)
-            {
-                return null;
-            }
-
+            lock (socketGate) { listener = ipcListener; }
+            if (listener == null) return null;
             token.Register(() => listener.Stop());
             return await listener.AcceptTcpClientAsync().ConfigureAwait(false);
         }
 
         private void HandleOutputLine(object sender, DataReceivedEventArgs args)
         {
-            if (args.Data == null)
-            {
-                return;
-            }
-
-            DispatchIncoming(args.Data);
+            if (args.Data == null) return;
+            EditorMainThreadDispatcher.Enqueue(() => DispatchIncoming(args.Data));
         }
 
         private void HandleErrorLine(object sender, DataReceivedEventArgs args)
         {
-            if (args.Data == null)
-            {
-                return;
-            }
-
-            logSink.Invoke(args.Data, ClassifyErrorLine(args.Data));
+            if (args.Data == null) return;
+            EditorMainThreadDispatcher.Enqueue(() => DispatchIncoming(args.Data));
         }
 
         private void DispatchIncoming(string payload)
         {
-            ParsedFrame frame = JsonFrameParser.TryParse(payload);
+            if (string.IsNullOrEmpty(payload)) return;
 
-            switch (frame.Kind)
+            if (payload.StartsWith("{"))
             {
-                case FrameKind.Handshake:
+                string evt = ExtractJsonString(payload, "evt");
+                int id = ExtractJsonInt(payload, "id");
+                string dataB64 = ExtractJsonString(payload, "data_b64");
+                
+                string data = string.Empty;
+                if (!string.IsNullOrEmpty(dataB64))
+                {
+                    try
+                    {
+                        byte[] bytes = Convert.FromBase64String(dataB64);
+                        data = Encoding.UTF8.GetString(bytes);
+                    }
+                    catch
+                    {
+                        data = dataB64;
+                    }
+                }
+
+                if (evt == "out")
+                {
+                    EditorMainThreadDispatcher.Enqueue(() => logSink.Invoke(data, TerminalLogLevel.PythonBridge));
+                }
+                else if (evt == "err")
+                {
+                    EditorMainThreadDispatcher.Enqueue(() => logSink.Invoke(data, TerminalLogLevel.Error));
+                }
+                else if (evt == "done")
+                {
+                    CompleteActive(id);
+                }
+                else if (evt == "ready")
+                {
                     SignalReady();
-                    break;
-                case FrameKind.Result:
-                    logSink.Invoke(frame.Payload, TerminalLogLevel.PythonBridge);
-                    CompleteActive(frame.ExecutionId);
-                    break;
-                case FrameKind.Variable:
-                    TrackVariable(frame.Payload);
-                    break;
-                case FrameKind.Error:
-                    logSink.Invoke(frame.Payload, TerminalLogLevel.Error);
-                    CompleteActive(frame.ExecutionId);
-                    break;
-                default:
-                    logSink.Invoke(payload, TerminalLogLevel.Information);
-                    break;
+                }
+                else
+                {
+                    EditorMainThreadDispatcher.Enqueue(() => logSink.Invoke(payload, TerminalLogLevel.Information));
+                }
             }
+            else if (payload == "READY")
+            {
+                SignalReady();
+            }
+            else
+            {
+                EditorMainThreadDispatcher.Enqueue(() => logSink.Invoke(payload, TerminalLogLevel.Information));
+            }
+        }
+
+        private string ExtractJsonString(string json, string key)
+        {
+            string search = "\"" + key + "\"";
+            int start = json.IndexOf(search, StringComparison.Ordinal);
+            if (start < 0) return string.Empty;
+            start += search.Length;
+            
+            while (start < json.Length && (json[start] == ' ' || json[start] == ':' || json[start] == '\t'))
+            {
+                start++;
+            }
+            
+            if (start >= json.Length || json[start] != '"') return string.Empty;
+            start++;
+            
+            int end = json.IndexOf("\"", start, StringComparison.Ordinal);
+            if (end < 0) return string.Empty;
+            return json.Substring(start, end - start);
+        }
+
+        private int ExtractJsonInt(string json, string key)
+        {
+            string search = "\"" + key + "\"";
+            int start = json.IndexOf(search, StringComparison.Ordinal);
+            if (start < 0) return 0;
+            start += search.Length;
+            
+            while (start < json.Length && (json[start] == ' ' || json[start] == ':' || json[start] == '\t'))
+            {
+                start++;
+            }
+            
+            int end = start;
+            while (end < json.Length && (char.IsDigit(json[end]) || json[end] == '-'))
+            {
+                end++;
+            }
+            if (end == start) return 0;
+            int.TryParse(json.Substring(start, end - start), out int result);
+            return result;
         }
 
         private void SignalReady()
         {
-            if (!awaitingHandshake)
-            {
-                return;
-            }
-
+            if (!awaitingHandshake) return;
             awaitingHandshake = false;
             readySignal?.TrySetResult(true);
         }
@@ -620,10 +543,7 @@ namespace UnityAdvancedTerminal.Core
         {
             lock (variableGate)
             {
-                if (!trackedGlobals.Contains(descriptor))
-                {
-                    trackedGlobals.Add(descriptor);
-                }
+                if (!trackedGlobals.Contains(descriptor)) trackedGlobals.Add(descriptor);
             }
         }
 
@@ -631,10 +551,7 @@ namespace UnityAdvancedTerminal.Core
         {
             lock (variableGate)
             {
-                if (trackedGlobals.Count > 256)
-                {
-                    trackedGlobals.RemoveRange(0, trackedGlobals.Count - 256);
-                }
+                if (trackedGlobals.Count > 256) trackedGlobals.RemoveRange(0, trackedGlobals.Count - 256);
             }
         }
 
@@ -642,150 +559,88 @@ namespace UnityAdvancedTerminal.Core
         {
             lock (processGate)
             {
-                try
-                {
-                    return hostedProcess != null && !hostedProcess.HasExited
-                        ? hostedProcess.WorkingSet64
-                        : 0L;
-                }
-                catch (Exception)
-                {
-                    return 0L;
-                }
+                try { return hostedProcess != null && !hostedProcess.HasExited ? hostedProcess.WorkingSet64 : 0L; }
+                catch { return 0L; }
             }
-        }
-
-        private TerminalLogLevel ClassifyErrorLine(string line)
-        {
-            if (line.Contains("SyntaxError") || line.Contains("IndentationError"))
-            {
-                return TerminalLogLevel.Error;
-            }
-
-            return line.Contains("Warning") ? TerminalLogLevel.Warning : TerminalLogLevel.Error;
         }
 
         private void HandleProcessExit(object sender, EventArgs args)
         {
-            logSink.Invoke("Python process terminated by the operating system.",
-                TerminalLogLevel.System);
-            readySignal?.TrySetResult(false);
-        }
-
-        private enum FrameKind
-        {
-            Raw,
-            Handshake,
-            Result,
-            Variable,
-            Error
-        }
-
-        private readonly struct ParsedFrame
-        {
-            public FrameKind Kind { get; }
-
-            public int ExecutionId { get; }
-
-            public string Payload { get; }
-
-            public ParsedFrame(FrameKind kind, int executionId, string payload)
+            EditorMainThreadDispatcher.Enqueue(() =>
             {
-                Kind = kind;
-                ExecutionId = executionId;
-                Payload = payload;
-            }
-        }
-
-        private static class JsonFrameParser
-        {
-            public static ParsedFrame TryParse(string payload)
-            {
-                if (payload.StartsWith("{\"evt\":\"ready\"", StringComparison.Ordinal))
-                {
-                    return new ParsedFrame(FrameKind.Handshake, 0, payload);
-                }
-
-                if (payload.StartsWith("{\"evt\":\"out\"", StringComparison.Ordinal))
-                {
-                    return new ParsedFrame(FrameKind.Result, ExtractId(payload), ExtractData(payload));
-                }
-
-                if (payload.StartsWith("{\"evt\":\"var\"", StringComparison.Ordinal))
-                {
-                    return new ParsedFrame(FrameKind.Variable, 0, ExtractData(payload));
-                }
-
-                if (payload.StartsWith("{\"evt\":\"err\"", StringComparison.Ordinal))
-                {
-                    return new ParsedFrame(FrameKind.Error, ExtractId(payload), ExtractData(payload));
-                }
-
-                return new ParsedFrame(FrameKind.Raw, 0, payload);
-            }
-
-            private static int ExtractId(string json)
-            {
-                int marker = json.IndexOf("\"id\":", StringComparison.Ordinal);
-
-                if (marker < 0)
-                {
-                    return 0;
-                }
-
-                int start = marker + 5;
-                int length = 0;
-
-                while (start + length < json.Length && char.IsDigit(json[start + length]))
-                {
-                    length++;
-                }
-
-                return length == 0 ? 0 : int.Parse(json.Substring(start, length));
-            }
-
-            private static string ExtractData(string json)
-            {
-                int marker = json.IndexOf("\"data\":\"", StringComparison.Ordinal);
-
-                if (marker < 0)
-                {
-                    return json;
-                }
-
-                int start = marker + 8;
-                int end = json.LastIndexOf('"');
-
-                if (end <= start)
-                {
-                    return json;
-                }
-
-                return json.Substring(start, end - start).Replace("\\n", "\n");
-            }
-        }
-
-        private static class JsonFrameBuilder
-        {
-            public static string BuildCommand(int executionId, string statement)
-            {
-                string escaped = statement.Replace("\\", "\\\\")
-                                          .Replace("\"", "\\\"")
-                                          .Replace("\n", "\\n")
-                                          .Replace("\r", "");
-
-                return $"{{\"cmd\":\"exec\",\"id\":{executionId},\"src\":\"{escaped}\"}}";
-            }
+                logSink.Invoke("Python process terminated by the operating system.", TerminalLogLevel.System);
+                readySignal?.TrySetResult(false);
+            });
         }
 
         private static class BootstrapPayloadRepository
         {
-            public const string ResourcePath =
-                "Assets/Editor/AdvancedTerminal/Resources/unity_bootstrap.py";
+            public const string ResourcePath = "Assets/Editor/AdvancedTerminal/Resources/unity_bootstrap.py";
 
             public static string Build()
             {
-                return File.ReadAllText(ResourcePath, Encoding.UTF8);
+                if (File.Exists(ResourcePath)) return File.ReadAllText(ResourcePath, Encoding.UTF8);
+
+                return @"import sys
+import os
+import traceback
+import io
+import json
+import base64
+
+_scope = {""__name__"": ""__main__""}
+
+def _send_json(evt, exec_id=0, data=""""):
+    b64 = base64.b64encode(data.encode('utf-8')).decode('ascii')
+    msg = {""evt"": evt, ""id"": exec_id, ""data_b64"": b64}
+    print(json.dumps(msg))
+    sys.stdout.flush()
+
+def main():
+    _send_json(""ready"")
+
+    for raw_line in sys.stdin:
+        raw_line = raw_line.strip()
+        if not raw_line:
+            continue
+
+        try:
+            frame = json.loads(raw_line)
+            cmd = frame.get(""cmd"")
+            exec_id = frame.get(""id"", 0)
+            
+            if cmd == ""exec"":
+                b64_src = frame.get(""src_b64"", """")
+                src = base64.b64decode(b64_src).decode('utf-8')
+                
+                out_capture = io.StringIO()
+                err_capture = io.StringIO()
+                old_out, old_err = sys.stdout, sys.stderr
+                sys.stdout, sys.stderr = out_capture, err_capture
+                
+                try:
+                    compiled_code = compile(src, ""<string>"", ""exec"")
+                    exec(compiled_code, _scope)
+                except Exception:
+                    traceback.print_exc(file=err_capture)
+                finally:
+                    sys.stdout, sys.stderr = old_out, old_err
+                    
+                out_val = out_capture.getvalue()
+                err_val = err_capture.getvalue()
+                
+                if out_val:
+                    _send_json(""out"", exec_id, out_val)
+                if err_val:
+                    _send_json(""err"", exec_id, err_val)
+                    
+                _send_json(""done"", exec_id)
+                
+        except Exception as e:
+            _send_json(""err"", 0, f""Bootstrap parse error: {str(e)}"")
+
+if __name__ == ""__main__"":
+    main()";
             }
 
             public static string WriteToTemp(string payload)

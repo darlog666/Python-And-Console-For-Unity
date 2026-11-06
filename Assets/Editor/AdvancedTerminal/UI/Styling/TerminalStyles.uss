@@ -123,10 +123,10 @@
 }
 
 .log-row {
-    font-family: var(--terminal-mono);
+    -unity-font: var(--terminal-mono);
     padding-left: 6px;
     padding-right: 6px;
-    white-space: normal;
+    -unity-white-space: normal;
 }
 
 .console-input {
@@ -135,7 +135,7 @@
     border-width: 1px;
     border-color: var(--terminal-border);
     color: var(--terminal-cyan);
-    font-family: var(--terminal-mono);
+    -unity-font: var(--terminal-mono);
 }
 
 .console-input:focus {
@@ -169,7 +169,7 @@
 .suggestion-item {
     padding-left: 8px;
     padding-right: 8px;
-    font-family: var(--terminal-mono);
+    -unity-font: var(--terminal-mono);
     color: var(--terminal-text);
 }
 
@@ -214,11 +214,10 @@
     flex-grow: 1;
     background-color: var(--terminal-background);
     color: transparent;
-    caret-color: var(--terminal-text);
     selection-background-color: rgba(0, 206, 209, 0.35);
-    font-family: var(--terminal-mono);
+    -unity-font: var(--terminal-mono);
     font-size: 12px;
-    white-space: none;
+    -unity-white-space: pre;
 }
 
 .code-field .unity-text-input-field__input {
@@ -235,13 +234,13 @@
     top: 0;
     left: 0;
     right: 0;
-    pickable: false;
+    picking-mode: Ignore;
 }
 
 .highlight-row {
-    font-family: var(--terminal-mono);
+    -unity-font: var(--terminal-mono);
     font-size: 12px;
-    white-space: none;
+    -unity-white-space: pre;
     padding-left: 4px;
     -unity-text-align: upper-left;
 }
@@ -269,7 +268,7 @@
 }
 
 .variable-row {
-    font-family: var(--terminal-mono);
+    -unity-font: var(--terminal-mono);
     font-size: 11px;
     color: var(--terminal-amber);
     padding-left: 6px;
@@ -280,7 +279,7 @@
 }
 
 .process-row {
-    font-family: var(--terminal-mono);
+    -unity-font: var(--terminal-mono);
     font-size: 11px;
     color: var(--terminal-muted);
     padding-left: 6px;

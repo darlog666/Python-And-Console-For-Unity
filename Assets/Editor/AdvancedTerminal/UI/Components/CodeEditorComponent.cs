@@ -70,8 +70,7 @@ namespace UnityAdvancedTerminal.UI.Components
         private string activeFileName = DefaultScratchName;
         private bool collapsed;
 
-        public CodeEditorComponent(VisualElement host, ITerminalEngine engine,
-            IScriptStorageManager storage)
+        public CodeEditorComponent(VisualElement host, ITerminalEngine engine, IScriptStorageManager storage)
         {
             this.engine = engine ?? throw new ArgumentNullException(nameof(engine));
             this.storage = storage ?? throw new ArgumentNullException(nameof(storage));
@@ -94,10 +93,10 @@ namespace UnityAdvancedTerminal.UI.Components
             codeField.isDelayed = false;
             codeField.AddToClassList("code-field");
             codeField.value = ReadActiveFile();
-            codeField.RegisterCallback<KeyDownEvent>(HandleCodeKey);
+            codeField.RegisterCallback<KeyDownEvent>(HandleCodeKey, TrickleDown.TrickleDown);
             codeField.RegisterValueChangedCallback(HandleCodeMutation);
 
-            editorScroll = new ScrollView(Orientation.Vertical);
+            editorScroll = new ScrollView(ScrollViewMode.Vertical);
             editorScroll.AddToClassList("gutter-scroll");
             editorScroll.Add(highlightLayer);
             editorScroll.Add(codeField);

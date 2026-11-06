@@ -2,12 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityAdvancedTerminal.Architecture.Commands;
 using UnityAdvancedTerminal.Architecture.Observers;
 using UnityAdvancedTerminal.Architecture.Pipelines;
+using UnityAdvancedTerminal.Utility;
 using UnityEditor;
 using UnityEngine;
 
@@ -26,43 +26,24 @@ namespace UnityAdvancedTerminal.Core
     public interface ITerminalEngine : ITerminalService
     {
         event Action<LogFlushedEvent> BatchFlushed;
-
         event Action BufferCleared;
-
         event Action<string> QuickVariableChanged;
-
         IReadOnlyList<ITerminalCommand> CommandCatalog { get; }
-
         IReadOnlyList<TerminalLogEntry> Snapshot();
-
         void Emit(string message, TerminalLogLevel level);
-
         void Observe(ITerminalLogObserver observer);
-
         void Unobserve(string observerId);
-
         void SubmitInput(string rawLine);
-
         Task RunPythonAsync(string statement);
-
         void BindQuickVariable(string name, string value);
-
         bool ToggleLogMirror(bool enabled);
-
         bool KillSwitch();
-
         void ClearBuffers();
-
         void RegisterMacro(string macroName, string scriptPath);
-
         void ExecuteMacro(string macroName);
-
         IReadOnlyDictionary<string, string> MacroBindings { get; }
-
         string ExportSession(bool asJson);
-
         void RefreshEnvironmentTree();
-
         IReadOnlyList<string> SuggestTokens(string prefix);
     }
 
@@ -121,9 +102,7 @@ namespace UnityAdvancedTerminal.Core
         public string ServiceName { get; }
 
         public event Action<LogFlushedEvent> BatchFlushed;
-
         public event Action BufferCleared;
-
         public event Action<string> QuickVariableChanged;
 
         public IReadOnlyList<ITerminalCommand> CommandCatalog => commands;
@@ -140,21 +119,24 @@ namespace UnityAdvancedTerminal.Core
             TerminalLogEntry entry = new TerminalLogEntry(
                 processed.ProcessedText, processed.InferredLevel, ResolveChannel(processed.InferredLevel));
 
-            lock (observerGate)
-            {
-                for (int i = 0; i < observers.Count; i++)
-                {
-                    if (observers[i].Accepts(entry))
-                    {
-                        observers[i].OnLogEnqueued(entry);
-                    }
-                }
-            }
-
             lock (bufferGate)
             {
                 stagingRing.Add(entry);
             }
+
+            EditorMainThreadDispatcher.Enqueue(() =>
+            {
+                lock (observerGate)
+                {
+                    for (int i = 0; i < observers.Count; i++)
+                    {
+                        if (observers[i].Accepts(entry))
+                        {
+                            observers[i].OnLogEnqueued(entry);
+                        }
+                    }
+                }
+            });
         }
 
         public IReadOnlyList<TerminalLogEntry> Snapshot()
@@ -243,13 +225,7 @@ namespace UnityAdvancedTerminal.Core
         public string ExportSession(bool asJson)
         {
             IReadOnlyList<TerminalLogEntry> snapshot = Snapshot();
-
-            if (asJson)
-            {
-                return SerializeAsJson(snapshot);
-            }
-
-            return textPipeline.SerializeMatrix(snapshot);
+            return asJson ? SerializeAsJson(snapshot) : textPipeline.SerializeMatrix(snapshot);
         }
 
         public bool ToggleLogMirror(bool enabled)
@@ -281,15 +257,17 @@ namespace UnityAdvancedTerminal.Core
                 stagingRing.Clear();
             }
 
-            lock (observerGate)
+            EditorMainThreadDispatcher.Enqueue(() =>
             {
-                foreach (ITerminalLogObserver observer in observers)
+                lock (observerGate)
                 {
-                    observer.OnBufferCleared();
+                    foreach (ITerminalLogObserver observer in observers)
+                    {
+                        observer.OnBufferCleared();
+                    }
                 }
-            }
-
-            BufferCleared?.Invoke();
+                BufferCleared?.Invoke();
+            });
         }
 
         public void RefreshEnvironmentTree()
@@ -367,6 +345,8 @@ namespace UnityAdvancedTerminal.Core
         private void DispatchCommand(string rawLine)
         {
             string[] tokens = Tokenize(rawLine);
+            if (tokens.Length == 0) return;
+
             string head = tokens[0].ToLowerInvariant();
 
             foreach (ITerminalCommand command in commands)
@@ -380,7 +360,9 @@ namespace UnityAdvancedTerminal.Core
                 }
             }
 
-            Emit($"Unknown directive '{head}'. Type 'help' for the catalog.", TerminalLogLevel.Warning);
+            var sysCmd = new SystemCmdCommand();
+            var fallbackContext = new TerminalCommandContext(rawLine, "system", tokens, Relay);
+            sysCmd.Execute(fallbackContext);
         }
 
         private void Relay(string message, TerminalLogLevel level)
@@ -410,21 +392,23 @@ namespace UnityAdvancedTerminal.Core
                 stagingRing.Clear();
             }
 
-            lock (observerGate)
+            EditorMainThreadDispatcher.Enqueue(() =>
             {
-                foreach (ITerminalLogObserver observer in observers)
+                lock (observerGate)
                 {
-                    observer.OnBatchFlushed(drained);
+                    foreach (ITerminalLogObserver observer in observers)
+                    {
+                        observer.OnBatchFlushed(drained);
+                    }
                 }
-            }
-
-            BatchFlushed?.Invoke(new LogFlushedEvent(drained));
+                BatchFlushed?.Invoke(new LogFlushedEvent(drained));
+            });
         }
 
         private static string[] Tokenize(string input)
         {
             List<string> tokens = new List<string>();
-            StringBuilder current = new StringBuilder();
+            System.Text.StringBuilder current = new System.Text.StringBuilder();
             bool insideQuotes = false;
 
             foreach (char symbol in input)
@@ -442,7 +426,6 @@ namespace UnityAdvancedTerminal.Core
                         tokens.Add(current.ToString());
                         current.Clear();
                     }
-
                     continue;
                 }
 
@@ -515,7 +498,7 @@ namespace UnityAdvancedTerminal.Core
 
         private string SerializeAsJson(IReadOnlyList<TerminalLogEntry> entries)
         {
-            StringBuilder builder = new StringBuilder();
+            System.Text.StringBuilder builder = new System.Text.StringBuilder();
             builder.AppendLine("{");
             builder.AppendLine($"  \"session\": \"{Guid.NewGuid():N}\",");
             builder.AppendLine($"  \"unityVersion\": \"{Application.unityVersion}\",");
@@ -613,7 +596,7 @@ namespace UnityAdvancedTerminal.Core
         {
             EnsureWorkspaceSkeleton();
             IEnumerable<string> lines = boundMacros.Select(pair => $"{pair.Key}={pair.Value}");
-            File.WriteAllLines(MacroRegistryPath, lines, Encoding.UTF8);
+            File.WriteAllLines(MacroRegistryPath, lines, System.Text.Encoding.UTF8);
         }
 
         private const string PythonBridgeCommandPrefix = "unity-internal-command:";

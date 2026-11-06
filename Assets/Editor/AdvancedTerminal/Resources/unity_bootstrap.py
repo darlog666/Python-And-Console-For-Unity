@@ -1,87 +1,60 @@
 import sys
-import json
-import socket
-import threading
-import contextlib
-import io
+import os
 import traceback
+import io
+import json
+import base64
 
-COMMAND_PREFIX = "unity-internal-command:"
+_scope = {"__name__": "__main__"}
 
-
-def emit(kind, data, ident=0):
-    payload = {"evt": kind, "id": ident, "data": str(data)}
-    sys.__stdout__.write(json.dumps(payload) + "\n")
-    sys.__stdout__.flush()
-
-
-def connect_ipc(port):
-    try:
-        channel = socket.create_connection(("127.0.0.1", port), timeout=5)
-        channel.sendall(b'{"evt":"ready","id":0,"data":"ipc-handshake"}\n')
-        channel.close()
-    except Exception:
-        pass
-
-
-def read_port():
-    if "--ipc-port" in sys.argv:
-        return int(sys.argv[sys.argv.index("--ipc-port") + 1])
-    return int(__import__("os").environ.get("UNITY_IPC_PORT", "0"))
-
-
-def run_command(src, ident, scope):
-    token = src.split(":", 1)[1]
-    for line in token.split("\n"):
-        stripped = line.strip()
-        if not stripped:
-            continue
-        name, _, value = stripped.partition("=")
-        scope[name.strip()] = eval(value.strip(), scope)
-    emit("out", f"unity command applied: {token}", ident)
-
+def _send_json(evt, exec_id=0, data=""):
+    b64 = base64.b64encode(data.encode('utf-8')).decode('ascii')
+    msg = {"evt": evt, "id": exec_id, "data_b64": b64}
+    print(json.dumps(msg))
+    sys.stdout.flush()
 
 def main():
-    scope = {"__name__": "__unity_terminal__"}
-    port = read_port()
+    _send_json("ready")
 
-    if port:
-        threading.Thread(target=connect_ipc, args=(port,), daemon=True).start()
-
-    emit("ready", "bootstrap-online")
-
-    for raw in sys.stdin:
-        raw = raw.strip()
-        if not raw:
+    for raw_line in sys.stdin:
+        raw_line = raw_line.strip()
+        if not raw_line:
             continue
 
         try:
-            frame = json.loads(raw)
-        except ValueError:
-            emit("err", f"malformed frame: {raw}")
-            continue
+            frame = json.loads(raw_line)
+            cmd = frame.get("cmd")
+            exec_id = frame.get("id", 0)
+            
+            if cmd == "exec":
+                b64_src = frame.get("src_b64", "")
+                src = base64.b64decode(b64_src).decode('utf-8')
+                
+                out_capture = io.StringIO()
+                err_capture = io.StringIO()
+                old_out, old_err = sys.stdout, sys.stderr
+                sys.stdout, sys.stderr = out_capture, err_capture
+                
+                try:
+                    compiled_code = compile(src, "<string>", "exec")
+                    exec(compiled_code, _scope)
+                except Exception:
+                    traceback.print_exc(file=err_capture)
+                finally:
+                    sys.stdout, sys.stderr = old_out, old_err
+                    
+                out_val = out_capture.getvalue()
+                err_val = err_capture.getvalue()
+                
+                if out_val:
+                    _send_json("out", exec_id, out_val)
+                if err_val:
+                    _send_json("err", exec_id, err_val)
+                    
+                _send_json("done", exec_id)
+                
+        except Exception as e:
+            _send_json("err", 0, f"Bootstrap parse error: {str(e)}")
 
-        ident = frame.get("id", 0)
-        src = frame.get("src", "")
-
-        if src.startswith(COMMAND_PREFIX):
-            run_command(src, ident, scope)
-            continue
-
-        capture = io.StringIO()
-        try:
-            with contextlib.redirect_stdout(capture):
-                exec(compile(src, "<unity-terminal>", "exec"), scope)
-            emit("out", capture.getvalue(), ident)
-        except Exception:
-            emit("err", capture.getvalue() + traceback.format_exc(), ident)
-
-        for key, value in list(scope.items()):
-            if key.startswith("__"):
-                continue
-            if callable(value):
-                continue
-            emit("var", f"{key}={value!r}")
-
-
-main()
+if __name__ == "__main__":
+    main()

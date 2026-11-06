@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using UnityAdvancedTerminal.Core;
 using UnityAdvancedTerminal.Utility;
 using UnityEditor;
@@ -13,33 +14,29 @@ namespace UnityAdvancedTerminal.UI.Components
     {
         private const int VariableRetention = 64;
         private const int ProcessRetention = 32;
-        private const string WorkspaceFolderName = "PythonScripts";
 
         private readonly ITerminalEngine engine;
         private readonly IScriptStorageManager storage;
 
-        private readonly TreeView workspaceTree;
+        private readonly ListView workspaceList;
         private readonly ListView quickVariableList;
         private readonly ListView processMonitorList;
-
-        private readonly List<TreeViewItemData<string>> treeRoots = new List<TreeViewItemData<string>>();
 
         private List<string> variableRows = new List<string>();
         private List<string> processRows = new List<string>();
 
-        public EnvironmentTreeComponent(VisualElement host, ITerminalEngine engine,
-            IScriptStorageManager storage)
+        public EnvironmentTreeComponent(VisualElement host, ITerminalEngine engine, IScriptStorageManager storage)
         {
             this.engine = engine ?? throw new ArgumentNullException(nameof(engine));
             this.storage = storage ?? throw new ArgumentNullException(nameof(storage));
 
             host.Add(BuildSectionHeader("Project Environment Explorer"));
 
-            workspaceTree = new TreeView(MakeWorkspaceRow, 22, BindWorkspaceRow);
-            workspaceTree.name = "workspace-tree";
-            workspaceTree.selectionType = TreeViewSelectionType.Single;
-            workspaceTree.onSelectionChanged += HandleWorkspaceSelection;
-            host.Add(workspaceTree);
+            workspaceList = new ListView(BuildDirectoryNodes().ToList(), 22, MakeWorkspaceRow, BindWorkspaceRow);
+            workspaceList.name = "workspace-tree";
+            workspaceList.selectionType = SelectionType.Single;
+            workspaceList.selectionChanged += HandleWorkspaceSelection;
+            host.Add(workspaceList);
 
             Button refreshButton = MakeFlatButton("Refresh Workspace");
             refreshButton.clicked += ReloadInventory;
@@ -84,22 +81,16 @@ namespace UnityAdvancedTerminal.UI.Components
         private void ReloadInventory()
         {
             engine.RefreshEnvironmentTree();
-            treeRoots.Clear();
-            treeRoots.AddRange(BuildDirectoryNodes());
-            workspaceTree.SetRootItems(treeRoots);
+            workspaceList.itemsSource = BuildDirectoryNodes().ToList();
+            workspaceList.RefreshItems();
         }
 
-        private IEnumerable<TreeViewItemData<string>> BuildDirectoryNodes()
+        private IEnumerable<StoredScript> BuildDirectoryNodes()
         {
-            foreach (StoredScript script in storage.EnumerateScripts())
-            {
-                yield return new TreeViewItemData<string>(
-                    script.FullPath.GetHashCode(),
-                    $"{script.FileName} ({script.LineCount} lines)");
-            }
+            return storage.EnumerateScripts();
         }
 
-        private VisualElement MakeWorkspaceRow(int index)
+        private VisualElement MakeWorkspaceRow()
         {
             Label label = new Label();
             label.AddToClassList("tree-row");
@@ -108,30 +99,19 @@ namespace UnityAdvancedTerminal.UI.Components
 
         private void BindWorkspaceRow(VisualElement element, int index)
         {
-            ((Label)element).text = ResolveNodeText(index);
-        }
-
-        private string ResolveNodeText(int index)
-        {
-            if (index < 0 || index >= treeRoots.Count)
+            if (workspaceList.itemsSource is List<StoredScript> scripts && index >= 0 && index < scripts.Count)
             {
-                return string.Empty;
+                ((Label)element).text = $"{scripts[index].FileName} ({scripts[index].LineCount} lines)";
             }
-
-            return treeRoots[index].GetData();
         }
 
         private void HandleWorkspaceSelection(IEnumerable<object> selection)
         {
             foreach (object item in selection)
             {
-                string row = item?.ToString() ?? string.Empty;
-                int cut = row.IndexOf(' ');
-                string fileName = cut > 0 ? row.Substring(0, cut) : row;
-
-                if (!string.IsNullOrEmpty(fileName))
+                if (item is StoredScript script)
                 {
-                    OpenScriptInEditor(fileName);
+                    OpenScriptInEditor(script.FileName);
                 }
             }
         }
@@ -154,7 +134,7 @@ namespace UnityAdvancedTerminal.UI.Components
             }
         }
 
-        private static string ToAssetPath(string absolutePath)
+        private string ToAssetPath(string absolutePath)
         {
             string normalized = absolutePath.Replace('\\', '/');
             string projectRoot = Directory.GetCurrentDirectory().Replace('\\', '/').TrimEnd('/') + "/";
@@ -165,12 +145,12 @@ namespace UnityAdvancedTerminal.UI.Components
             }
 
             string relative = normalized.Substring(projectRoot.Length);
-            int marker = relative.IndexOf(WorkspaceFolderName + "/", StringComparison.Ordinal);
+            int marker = relative.IndexOf("PythonScripts/", StringComparison.Ordinal);
 
-            return marker < 0 ? null : relative.Substring(0, marker + WorkspaceFolderName.Length);
+            return marker < 0 ? null : relative.Substring(0, marker + "PythonScripts".Length);
         }
 
-        private VisualElement MakeVariableRow(int index)
+        private VisualElement MakeVariableRow()
         {
             Label label = new Label();
             label.AddToClassList("monitor-row");
@@ -179,10 +159,13 @@ namespace UnityAdvancedTerminal.UI.Components
 
         private void BindVariableRow(VisualElement element, int index)
         {
-            ((Label)element).text = variableRows[index];
+            if (index >= 0 && index < variableRows.Count)
+            {
+                ((Label)element).text = variableRows[index];
+            }
         }
 
-        private VisualElement MakeProcessRow(int index)
+        private VisualElement MakeProcessRow()
         {
             Label label = new Label();
             label.AddToClassList("monitor-row");
@@ -191,7 +174,10 @@ namespace UnityAdvancedTerminal.UI.Components
 
         private void BindProcessRow(VisualElement element, int index)
         {
-            ((Label)element).text = processRows[index];
+            if (index >= 0 && index < processRows.Count)
+            {
+                ((Label)element).text = processRows[index];
+            }
         }
 
         private void HandleVariableChange(string descriptor)

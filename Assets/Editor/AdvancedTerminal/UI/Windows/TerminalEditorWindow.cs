@@ -73,6 +73,8 @@ namespace UnityAdvancedTerminal.UI.Windows
             RebuildMacroButtons();
 
             engine.Observe(this);
+            
+            engine.Emit("Advanced Terminal UI Initialized and listening.", TerminalLogLevel.System);
         }
 
         private void AttachStylesheet()
