@@ -1,5 +1,7 @@
 # Unity Advanced Terminal
 
+![Unity Advanced Terminal](screen.png)
+
 A custom terminal window for the Unity Editor. It combines a native OS shell, an isolated Python execution environment, and Unity's debug logs into a single UIElements-based interface.
 
 Built for developers who want to run Git commands, automate build pipelines, or test Python scripts without alt-tabbing out of the editor.
